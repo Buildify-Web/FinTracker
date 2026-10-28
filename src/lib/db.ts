@@ -15,13 +15,23 @@ declare global {
 }
 
 function createPool() {
-  const connectionString = process.env.DATABASE_URL;
-  if (!connectionString) {
+  const raw = process.env.DATABASE_URL;
+  if (!raw) {
     throw new Error('DATABASE_URL is not set');
   }
+  const requiresSsl = raw.includes('sslmode=require') || raw.includes('sslmode=verify-full');
+
+  // pg's own connection-string parser warns on `sslmode=require` et al.
+  // regardless of the explicit `ssl` option below, so strip the mode here —
+  // we already decide TLS ourselves from the flag it leaves behind.
+  const url = new URL(raw);
+  url.searchParams.delete('sslmode');
+  url.searchParams.delete('channel_binding');
+  const connectionString = url.toString();
+
   return new Pool({
     connectionString,
-    ssl: connectionString.includes('sslmode=require') ? { rejectUnauthorized: false } : undefined,
+    ssl: requiresSsl ? { rejectUnauthorized: false } : undefined,
     max: 10
   });
 }
