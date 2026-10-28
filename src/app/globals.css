@@ -1,0 +1,44 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --bg: 243 241 236;
+  --surface: 255 255 255;
+  --border: 222 217 205;
+  --fg: 36 31 22;
+  --muted: 138 129 113;
+  --accent: 181 101 29;
+  --pos: 47 122 79;
+  --warn: 184 134 11;
+  --neg: 179 64 47;
+  --font-sans: 'IBM Plex Sans', system-ui, sans-serif;
+  --font-mono: 'IBM Plex Mono', monospace;
+  color-scheme: light;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: 21 19 15;
+    --surface: 29 26 20;
+    --border: 53 47 35;
+    --fg: 236 231 218;
+    --muted: 155 146 128;
+    --accent: 224 139 62;
+    --pos: 95 185 127;
+    --warn: 224 184 74;
+    --neg: 226 106 86;
+    color-scheme: dark;
+  }
+}
+
+html, body { height: 100%; }
+body {
+  background: rgb(var(--bg));
+  color: rgb(var(--fg));
+  font-family: var(--font-sans);
+}
+* { border-color: rgb(var(--border)); }
+.tabular { font-variant-numeric: tabular-nums; }
+::-webkit-scrollbar { width: 10px; height: 10px; }
+::-webkit-scrollbar-thumb { background: rgb(var(--border)); border-radius: 6px; }
