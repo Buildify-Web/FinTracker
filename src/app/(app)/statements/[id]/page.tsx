@@ -6,10 +6,11 @@ import { notFound } from 'next/navigation';
 
 export const dynamic = 'force-dynamic';
 
-export default async function StatementDetailPage({ params }: { params: { id: string } }) {
+export default async function StatementDetailPage({ params }: { params: Promise<{ id: string }> }) {
+  const { id } = await params;
   const statement = await queryOne<{ id: string; filename: string; kind: string; account_name: string | null; period_start: string | null; period_end: string | null }>(
     'SELECT s.*, a.name AS account_name FROM statements s LEFT JOIN accounts a ON a.id = s.account_id WHERE s.id = $1',
-    [params.id]
+    [id]
   );
   if (!statement) notFound();
 
@@ -17,14 +18,14 @@ export default async function StatementDetailPage({ params }: { params: { id: st
     `SELECT t.*, c.name AS category_name, cl.name AS client_name
      FROM transactions t LEFT JOIN categories c ON c.id = t.category_id LEFT JOIN clients cl ON cl.id = t.client_id
      WHERE t.statement_id = $1 ORDER BY t.date`,
-    [params.id]
+    [id]
   );
 
   const byCategory = await query<{ name: string; total: string; direction: string }>(
     `SELECT COALESCE(c.name, 'Uncategorised') AS name, SUM(t.amount) AS total, t.direction
      FROM transactions t LEFT JOIN categories c ON c.id = t.category_id
      WHERE t.statement_id = $1 GROUP BY c.name, t.direction ORDER BY total DESC`,
-    [params.id]
+    [id]
   );
 
   const totalIn = transactions.filter((t) => t.direction === 'in').reduce((s, t) => s + parseFloat(t.amount), 0);

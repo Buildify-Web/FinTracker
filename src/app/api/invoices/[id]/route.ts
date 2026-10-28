@@ -5,7 +5,8 @@ export const dynamic = 'force-dynamic';
 
 // Marks an invoice paid: creates the matching inbound transaction in one SQL round-trip
 // so cash and receivables stay consistent.
-export async function PATCH(req: NextRequest, { params }: { params: { id: string } }) {
+export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+  const { id } = await params;
   const body = await req.json();
   if (body.action !== 'mark_paid') {
     return NextResponse.json({ error: 'Unsupported action.' }, { status: 400 });
@@ -15,7 +16,7 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
 
   const invoice = await queryOne<{ id: string; amount: string; client_id: string | null; project_id: string | null; number: string }>(
     'SELECT * FROM invoices WHERE id = $1',
-    [params.id]
+    [id]
   );
   if (!invoice) return NextResponse.json({ error: 'Invoice not found.' }, { status: 404 });
 
@@ -27,7 +28,7 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
   );
   const updated = await query(
     `UPDATE invoices SET status = 'paid', paid_date = $2, paid_transaction_id = $3 WHERE id = $1 RETURNING *`,
-    [params.id, paidDate, tx[0].id]
+    [id, paidDate, tx[0].id]
   );
   return NextResponse.json({ invoice: updated[0] });
 }

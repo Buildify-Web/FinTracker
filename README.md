@@ -10,7 +10,7 @@ nothing is estimated or made up by an LLM.
 
 ## Stack
 
-- Next.js 14 (App Router, TypeScript), server-rendered pages + API routes
+- Next.js 16 (App Router, TypeScript, Turbopack), server-rendered pages + API routes
 - PostgreSQL (your managed instance — this app never provisions its own DB)
 - `pg` for queries (plain SQL, no ORM) — see `src/lib/queries.ts`
 - Chart.js for charts
@@ -52,7 +52,34 @@ nothing is estimated or made up by an LLM.
 
 ## Running it
 
-### On the VPS, with Docker (recommended)
+### On Vercel
+
+1. Import this repo in the Vercel dashboard (New Project → select
+   `Buildify-Web/FinTracker`). Vercel detects Next.js automatically.
+2. Add the env vars from `.env.example` under Project → Settings →
+   Environment Variables: `DATABASE_URL`, `SESSION_SECRET`, `ADMIN_EMAIL`,
+   `ADMIN_PASSWORD`.
+3. Deploy. The build runs `npm run vercel-build` (Vercel's own convention —
+   it picks this script up automatically over the plain `build` script),
+   which applies `db/schema.sql` and seeds/updates your login **before**
+   `next build`, so every deploy keeps the schema current and your password
+   in sync with the env var.
+
+Two things to get right since Postgres lives on your VPS, not in Vercel's
+network:
+
+- Your VPS's Postgres must accept connections from the public internet
+  (Vercel has no fixed outbound IPs), over TLS — `sslmode=require` in
+  `DATABASE_URL`, password auth, and a firewall rule open on the Postgres
+  port. If your managed Postgres sits behind a VPN or private network today,
+  this is the thing to fix first.
+- Vercel's API routes run as serverless functions, so `pg`'s connection pool
+  (`src/lib/db.ts`) is per-invocation, not shared across them the way it
+  would be on a long-running VPS process. Fine at single-founder traffic; if
+  this becomes multi-user, put PgBouncer (or your provider's pooler) in
+  front of Postgres rather than raising `max` in the pool.
+
+### On the VPS, with Docker (self-host alternative)
 
 ```bash
 docker compose up -d --build

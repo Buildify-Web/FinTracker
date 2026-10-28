@@ -7,9 +7,17 @@ const connectionString = process.env.DATABASE_URL;
 const email = process.env.ADMIN_EMAIL;
 const password = process.env.ADMIN_PASSWORD;
 
-if (!connectionString || !email || !password) {
-  console.error('DATABASE_URL, ADMIN_EMAIL and ADMIN_PASSWORD must all be set.');
+if (!connectionString) {
+  console.error('DATABASE_URL is not set.');
   process.exit(1);
+}
+
+if (!email || !password) {
+  // Runs automatically on every Vercel build (see package.json's vercel-build
+  // script) — skip quietly rather than failing the deploy if these haven't
+  // been added to the project's env vars yet.
+  console.log('ADMIN_EMAIL / ADMIN_PASSWORD not set — skipping admin seed. Set them and redeploy to create your login.');
+  process.exit(0);
 }
 
 const client = new pg.Client({ connectionString, ssl: connectionString.includes('sslmode=require') ? { rejectUnauthorized: false } : undefined });
