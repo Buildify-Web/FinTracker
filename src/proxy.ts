@@ -2,7 +2,7 @@ import { NextResponse, type NextRequest } from 'next/server';
 import { jwtVerify } from 'jose';
 
 const COOKIE_NAME = 'fintracker_session';
-const PUBLIC_PATHS = ['/login', '/api/auth/login', '/api/health'];
+const PUBLIC_PATHS = ['/login', '/api/auth/login', '/api/health', '/api/auth/otp/request', '/api/auth/otp/verify'];
 
 export async function proxy(req: NextRequest) {
   const { pathname } = req.nextUrl;

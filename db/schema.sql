@@ -10,8 +10,24 @@ CREATE TABLE IF NOT EXISTS users (
   password_hash TEXT NOT NULL,
   name TEXT NOT NULL DEFAULT 'Founder',
   role TEXT NOT NULL DEFAULT 'owner',
+  phone_number TEXT UNIQUE,
   created_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
+
+-- Phone/OTP login. In mock mode (default) the code is returned directly in
+-- the request API response instead of being sent via SMS — see src/lib/otp.ts.
+CREATE TABLE IF NOT EXISTS otp_codes (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  phone_number TEXT NOT NULL,
+  code_hash TEXT NOT NULL,
+  expires_at TIMESTAMPTZ NOT NULL,
+  consumed BOOLEAN NOT NULL DEFAULT false,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS idx_otp_codes_phone ON otp_codes(phone_number);
+
+-- Upgrade path for databases migrated before phone_number existed on users.
+ALTER TABLE users ADD COLUMN IF NOT EXISTS phone_number TEXT UNIQUE;
 
 CREATE TABLE IF NOT EXISTS accounts (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
