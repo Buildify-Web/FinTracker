@@ -38,7 +38,7 @@ function EmailLoginForm() {
         required
         value={email}
         onChange={(e) => setEmail(e.target.value)}
-        className="w-full mb-4 rounded-lg border border-border bg-bg px-3 py-2 text-sm"
+        className="w-full mb-4 rounded-xl border border-border bg-bg px-3.5 py-2.5 text-sm"
       />
       <label className="block text-xs font-semibold uppercase tracking-wide text-muted mb-1">Password</label>
       <input
@@ -46,10 +46,10 @@ function EmailLoginForm() {
         required
         value={password}
         onChange={(e) => setPassword(e.target.value)}
-        className="w-full mb-4 rounded-lg border border-border bg-bg px-3 py-2 text-sm"
+        className="w-full mb-4 rounded-xl border border-border bg-bg px-3.5 py-2.5 text-sm"
       />
       {error && <div className="text-neg text-sm mb-4">{error}</div>}
-      <button type="submit" disabled={loading} className="w-full bg-accent text-white font-semibold rounded-lg py-2 text-sm disabled:opacity-60">
+      <button type="submit" disabled={loading} className="w-full bg-accent text-white font-semibold rounded-full py-2.5 text-sm hover:bg-accent-2 transition-colors disabled:opacity-60">
         {loading ? 'Signing in…' : 'Sign in'}
       </button>
     </form>
@@ -114,10 +114,10 @@ function PhoneLoginForm() {
           placeholder="+91 98765 43210"
           value={phone}
           onChange={(e) => setPhone(e.target.value)}
-          className="w-full mb-4 rounded-lg border border-border bg-bg px-3 py-2 text-sm"
+          className="w-full mb-4 rounded-xl border border-border bg-bg px-3.5 py-2.5 text-sm"
         />
         {error && <div className="text-neg text-sm mb-4">{error}</div>}
-        <button type="submit" disabled={loading} className="w-full bg-accent text-white font-semibold rounded-lg py-2 text-sm disabled:opacity-60">
+        <button type="submit" disabled={loading} className="w-full bg-accent text-white font-semibold rounded-full py-2.5 text-sm hover:bg-accent-2 transition-colors disabled:opacity-60">
           {loading ? 'Sending…' : 'Send code'}
         </button>
       </form>
@@ -142,13 +142,13 @@ function PhoneLoginForm() {
         autoFocus
         value={code}
         onChange={(e) => setCode(e.target.value)}
-        className="w-full mb-2 rounded-lg border border-border bg-bg px-3 py-2 text-sm font-mono tracking-widest"
+        className="w-full mb-2 rounded-xl border border-border bg-bg px-3.5 py-2.5 text-sm font-mono tracking-widest"
       />
       <button type="button" onClick={() => setCodeSent(false)} className="text-xs text-muted mb-4 underline">
         Use a different number
       </button>
       {error && <div className="text-neg text-sm mb-4">{error}</div>}
-      <button type="submit" disabled={loading} className="w-full bg-accent text-white font-semibold rounded-lg py-2 text-sm disabled:opacity-60">
+      <button type="submit" disabled={loading} className="w-full bg-accent text-white font-semibold rounded-full py-2.5 text-sm hover:bg-accent-2 transition-colors disabled:opacity-60">
         {loading ? 'Verifying…' : 'Verify & sign in'}
       </button>
     </form>
@@ -159,20 +159,26 @@ function LoginForm() {
   const [tab, setTab] = useState<'email' | 'phone'>('email');
 
   return (
-    <div className="min-h-screen flex items-center justify-center px-4">
-      <div className="w-full max-w-sm bg-surface border border-border rounded-xl p-6">
-        <div className="font-mono text-xs uppercase tracking-wide text-muted mb-1">Buildify</div>
-        <h1 className="text-lg font-semibold mb-5">Sign in to God&apos;s View</h1>
+    <div className="min-h-screen flex items-center justify-center px-4 bg-bg">
+      <div className="w-full max-w-sm bg-surface border border-border rounded-2xl p-7">
+        <div className="flex items-center gap-2.5 mb-6">
+          <div className="w-9 h-9 rounded-xl bg-accent text-white flex items-center justify-center font-display font-bold text-base">B</div>
+          <div>
+            <div className="font-display font-bold text-[15px] leading-tight">Buildify</div>
+            <div className="text-[10px] font-semibold tracking-[0.12em] text-accent">GOD&apos;S VIEW</div>
+          </div>
+        </div>
+        <h1 className="font-display text-xl font-bold mb-5">Sign in</h1>
         <div className="flex gap-2 mb-5">
           <button
             onClick={() => setTab('email')}
-            className={`text-xs font-semibold rounded-md px-3 py-1.5 ${tab === 'email' ? 'bg-accent text-white' : 'border border-border text-muted'}`}
+            className={`text-xs font-semibold rounded-full px-4 py-2 transition-colors ${tab === 'email' ? 'bg-accent text-white' : 'border border-border text-muted'}`}
           >
             Email
           </button>
           <button
             onClick={() => setTab('phone')}
-            className={`text-xs font-semibold rounded-md px-3 py-1.5 ${tab === 'phone' ? 'bg-accent text-white' : 'border border-border text-muted'}`}
+            className={`text-xs font-semibold rounded-full px-4 py-2 transition-colors ${tab === 'phone' ? 'bg-accent text-white' : 'border border-border text-muted'}`}
           >
             Phone (OTP)
           </button>

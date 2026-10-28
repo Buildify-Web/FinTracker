@@ -24,7 +24,7 @@ export default function MarkPaidButton({ invoiceId, accounts }: { invoiceId: str
 
   if (!open) {
     return (
-      <button onClick={() => setOpen(true)} className="text-xs border border-border rounded-md px-2 py-1">
+      <button onClick={() => setOpen(true)} className="text-xs border border-border rounded-full px-2 py-1">
         Mark paid
       </button>
     );
@@ -32,14 +32,14 @@ export default function MarkPaidButton({ invoiceId, accounts }: { invoiceId: str
 
   return (
     <div className="flex items-center gap-1.5">
-      <select value={accountId} onChange={(e) => setAccountId(e.target.value)} className="text-xs border border-border rounded-md px-1.5 py-1 bg-bg">
+      <select value={accountId} onChange={(e) => setAccountId(e.target.value)} className="text-xs border border-border rounded-full px-1.5 py-1 bg-bg">
         {accounts.map((a) => (
           <option key={a.id} value={a.id}>
             {a.name}
           </option>
         ))}
       </select>
-      <button onClick={confirm} disabled={busy} className="text-xs bg-accent text-white rounded-md px-2 py-1">
+      <button onClick={confirm} disabled={busy} className="text-xs bg-accent text-white rounded-full px-2 py-1">
         {busy ? '…' : 'Confirm'}
       </button>
     </div>

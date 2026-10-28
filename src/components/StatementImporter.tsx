@@ -72,7 +72,7 @@ export default function StatementImporter() {
 
   if (!open) {
     return (
-      <button onClick={() => setOpen(true)} className="bg-accent text-white rounded-md px-3.5 py-2 text-sm font-semibold">
+      <button onClick={() => setOpen(true)} className="bg-accent text-white rounded-full px-3.5 py-2 text-sm font-semibold">
         + Import statement
       </button>
     );
@@ -82,7 +82,7 @@ export default function StatementImporter() {
     <div className="bg-surface border border-border rounded-xl p-4 flex flex-col gap-3.5">
       <div className="flex items-center justify-between">
         <h3 className="text-sm font-semibold">Import a statement</h3>
-        <button onClick={() => setOpen(false)} className="text-xs border border-border rounded-md px-2 py-1">
+        <button onClick={() => setOpen(false)} className="text-xs border border-border rounded-full px-2 py-1">
           Close
         </button>
       </div>
@@ -139,12 +139,12 @@ export default function StatementImporter() {
           </div>
 
           <div className="flex gap-2">
-            <button onClick={() => setMode('signed')} className={`text-xs rounded-md px-2.5 py-1.5 ${mode === 'signed' ? 'bg-accent text-white' : 'border border-border'}`}>
+            <button onClick={() => setMode('signed')} className={`text-xs rounded-full px-2.5 py-1.5 ${mode === 'signed' ? 'bg-accent text-white' : 'border border-border'}`}>
               Single signed amount column
             </button>
             <button
               onClick={() => setMode('debitCredit')}
-              className={`text-xs rounded-md px-2.5 py-1.5 ${mode === 'debitCredit' ? 'bg-accent text-white' : 'border border-border'}`}
+              className={`text-xs rounded-full px-2.5 py-1.5 ${mode === 'debitCredit' ? 'bg-accent text-white' : 'border border-border'}`}
             >
               Separate debit/credit columns
             </button>
@@ -221,7 +221,7 @@ export default function StatementImporter() {
           <button
             onClick={commit}
             disabled={busy || !accountId || !mapping.date || !mapping.description}
-            className="self-start bg-accent text-white rounded-md px-3.5 py-2 text-sm font-semibold disabled:opacity-60"
+            className="self-start bg-accent text-white rounded-full px-3.5 py-2 text-sm font-semibold disabled:opacity-60"
           >
             {busy ? 'Importing…' : 'Commit import'}
           </button>
@@ -232,7 +232,7 @@ export default function StatementImporter() {
         .input {
           background: rgb(var(--bg));
           border: 1px solid rgb(var(--border));
-          border-radius: 7px;
+          border-radius: 10px;
           padding: 8px 9px;
           font-size: 13px;
           color: rgb(var(--fg));

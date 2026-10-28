@@ -3,6 +3,14 @@
 import AppChart from '@/components/Chart';
 import { Card } from '@/components/ui';
 import { fmtCompactINR } from '@/lib/format';
+import { COLOR_POS, COLOR_WARN, COLOR_NEG } from '@/lib/chartColors';
+
+function marginColor(margin: number) {
+  return margin > 40 ? COLOR_POS : margin >= 25 ? COLOR_WARN : COLOR_NEG;
+}
+function marginBarClass(margin: number) {
+  return margin > 40 ? 'bg-pos' : margin >= 25 ? 'bg-warn' : 'bg-neg';
+}
 
 export default function ClientsCharts({
   projectFin,
@@ -12,29 +20,45 @@ export default function ClientsCharts({
   clientFin: { name: string; revenue: number; margin: number }[];
 }) {
   const sorted = [...projectFin].sort((a, b) => b.margin - a.margin);
+  const clients = clientFin.filter((c) => c.revenue > 0);
+  const maxRevenue = Math.max(1, ...clients.map((c) => c.revenue));
+
   return (
     <div className="grid lg:grid-cols-2 gap-3.5">
-      <Card title="Margin % per project">
-        <AppChart
-          type="bar"
-          data={{
-            labels: sorted.map((f) => f.label),
-            datasets: [{ data: sorted.map((f) => f.margin.toFixed(1)), backgroundColor: sorted.map((f) => (f.margin > 40 ? '#2f7a4f' : f.margin >= 25 ? '#b8860b' : '#b3402f')) }]
-          }}
-          options={{ indexAxis: 'y' as const, plugins: { legend: { display: false } }, scales: { x: { ticks: { callback: (v: number) => `${v}%` } } } }}
-        />
+      <Card title="Project margin" sub="Green >40% · Amber 25-40% · Red <25%">
+        <div className="flex flex-col gap-4">
+          {sorted.map((f) => (
+            <div key={f.label}>
+              <div className="flex items-center justify-between text-[13px] mb-1.5">
+                <span className="font-medium truncate">{f.label}</span>
+                <span className="font-mono font-semibold tabular flex-shrink-0 ml-2">{f.margin.toFixed(1)}%</span>
+              </div>
+              <div className="h-2 bg-bg rounded-full overflow-hidden">
+                <div className={`h-full rounded-full ${marginBarClass(f.margin)}`} style={{ width: `${Math.max(2, Math.min(100, f.margin))}%` }} />
+              </div>
+            </div>
+          ))}
+        </div>
       </Card>
-      <Card title="Revenue vs margin per client" sub="spot big-but-unprofitable">
+      <Card title="Revenue vs margin" sub="Bubble size = total billed">
         <AppChart
-          type="scatter"
-          data={{ datasets: [{ label: 'Clients', data: clientFin.filter((c) => c.revenue > 0).map((c) => ({ x: c.revenue, y: +c.margin.toFixed(1) })), backgroundColor: '#b5651d', pointRadius: 6 }] }}
+          type="bubble"
+          data={{
+            datasets: [
+              {
+                label: 'Clients',
+                data: clients.map((c) => ({ x: c.revenue, y: +c.margin.toFixed(1), r: 8 + (c.revenue / maxRevenue) * 14 })),
+                backgroundColor: clients.map((c) => marginColor(c.margin) + 'cc')
+              }
+            ]
+          }}
           options={{
             plugins: {
               legend: { display: false },
               tooltip: {
                 callbacks: {
                   label: (ctx: any) => {
-                    const c = clientFin.filter((x) => x.revenue > 0)[ctx.dataIndex];
+                    const c = clients[ctx.dataIndex];
                     return `${c.name}: ${fmtCompactINR(c.revenue)} rev, ${c.margin.toFixed(0)}% margin`;
                   }
                 }

@@ -3,31 +3,36 @@
 @tailwind utilities;
 
 :root {
-  --bg: 243 241 236;
+  --bg: 246 246 250;
   --surface: 255 255 255;
-  --border: 222 217 205;
-  --fg: 36 31 22;
-  --muted: 138 129 113;
-  --accent: 181 101 29;
-  --pos: 47 122 79;
-  --warn: 184 134 11;
-  --neg: 179 64 47;
-  --font-sans: 'IBM Plex Sans', system-ui, sans-serif;
+  --border: 226 227 235;
+  --fg: 15 23 42;
+  --muted: 100 116 139;
+  --accent: 109 40 217;
+  --accent-2: 124 58 237;
+  --secondary: 15 23 42;
+  --pos: 22 163 74;
+  --warn: 217 119 6;
+  --neg: 220 38 38;
+  --font-sans: 'Inter', system-ui, sans-serif;
+  --font-display: 'Plus Jakarta Sans', 'Inter', system-ui, sans-serif;
   --font-mono: 'IBM Plex Mono', monospace;
   color-scheme: light;
 }
 
 @media (prefers-color-scheme: dark) {
   :root {
-    --bg: 21 19 15;
-    --surface: 29 26 20;
-    --border: 53 47 35;
-    --fg: 236 231 218;
-    --muted: 155 146 128;
-    --accent: 224 139 62;
-    --pos: 95 185 127;
-    --warn: 224 184 74;
-    --neg: 226 106 86;
+    --bg: 10 11 18;
+    --surface: 17 19 30;
+    --border: 38 41 58;
+    --fg: 236 237 245;
+    --muted: 148 157 178;
+    --accent: 139 92 246;
+    --accent-2: 167 139 250;
+    --secondary: 226 232 240;
+    --pos: 74 222 128;
+    --warn: 245 158 11;
+    --neg: 248 113 113;
     color-scheme: dark;
   }
 }
@@ -40,5 +45,7 @@ body {
 }
 * { border-color: rgb(var(--border)); }
 .tabular { font-variant-numeric: tabular-nums; }
+h1, h2, h3, .font-display { font-family: var(--font-display); }
+input[type="range"] { accent-color: rgb(var(--accent)); }
 ::-webkit-scrollbar { width: 10px; height: 10px; }
 ::-webkit-scrollbar-thumb { background: rgb(var(--border)); border-radius: 6px; }

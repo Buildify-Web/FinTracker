@@ -19,7 +19,7 @@ export default function AddDebtForm() {
 
   if (!open) {
     return (
-      <button onClick={() => setOpen(true)} className="bg-accent text-white rounded-md px-3.5 py-2 text-sm font-semibold">
+      <button onClick={() => setOpen(true)} className="bg-accent text-white rounded-full px-3.5 py-2 text-sm font-semibold">
         + Add debt line
       </button>
     );
@@ -57,10 +57,10 @@ export default function AddDebtForm() {
         <input type="number" value={form.full_payment} onChange={(e) => setForm({ ...form, full_payment: e.target.value })} className="input" />
       </Field>
       <div className="flex items-end gap-2">
-        <button onClick={submit} disabled={busy || !form.name} className="bg-accent text-white rounded-md px-3.5 py-2 text-sm font-semibold disabled:opacity-60">
+        <button onClick={submit} disabled={busy || !form.name} className="bg-accent text-white rounded-full px-3.5 py-2 text-sm font-semibold disabled:opacity-60">
           {busy ? 'Saving…' : 'Save'}
         </button>
-        <button onClick={() => setOpen(false)} className="border border-border rounded-md px-3.5 py-2 text-sm">
+        <button onClick={() => setOpen(false)} className="border border-border rounded-full px-3.5 py-2 text-sm">
           Cancel
         </button>
       </div>
@@ -68,7 +68,7 @@ export default function AddDebtForm() {
         .input {
           background: rgb(var(--bg));
           border: 1px solid rgb(var(--border));
-          border-radius: 7px;
+          border-radius: 10px;
           padding: 8px 9px;
           font-size: 13px;
           color: rgb(var(--fg));

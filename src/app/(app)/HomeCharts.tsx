@@ -3,8 +3,7 @@
 import AppChart from '@/components/Chart';
 import { Card } from '@/components/ui';
 import { fmtCompactINR } from '@/lib/format';
-
-const COLORS = ['#b5651d', '#2f7a4f', '#3a6ea5', '#b8860b', '#8a4f9e', '#5f7a66'];
+import { CHART_COLORS as COLORS } from '@/lib/chartColors';
 
 type PnlMonth = { label: string; revenue: number; direct: number; expense: number; profit: number };
 

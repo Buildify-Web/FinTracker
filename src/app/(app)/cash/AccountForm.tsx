@@ -43,14 +43,14 @@ export default function AccountForm() {
         <label className="text-[11px] uppercase tracking-wide font-semibold text-muted">Opening balance (₹)</label>
         <input type="number" value={opening} onChange={(e) => setOpening(e.target.value)} placeholder="0" className="input" />
       </div>
-      <button onClick={submit} disabled={busy || !name} className="bg-accent text-white rounded-md px-3.5 py-2 text-sm font-semibold disabled:opacity-60">
+      <button onClick={submit} disabled={busy || !name} className="bg-accent text-white rounded-full px-3.5 py-2 text-sm font-semibold disabled:opacity-60">
         {busy ? 'Adding…' : 'Add account'}
       </button>
       <style jsx global>{`
         .input {
           background: rgb(var(--bg));
           border: 1px solid rgb(var(--border));
-          border-radius: 7px;
+          border-radius: 10px;
           padding: 8px 9px;
           font-size: 13px;
           color: rgb(var(--fg));

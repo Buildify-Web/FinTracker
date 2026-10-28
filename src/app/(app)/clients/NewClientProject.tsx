@@ -28,7 +28,7 @@ export default function NewClientProject({ clients }: { clients: { id: string; n
     <Card title="Add client or project">
       <div className="flex gap-2 mb-3">
         {(['client', 'project'] as const).map((t) => (
-          <button key={t} onClick={() => setTab(t)} className={`text-xs font-semibold rounded-md px-2.5 py-1.5 ${tab === t ? 'bg-accent text-white' : 'border border-border'}`}>
+          <button key={t} onClick={() => setTab(t)} className={`text-xs font-semibold rounded-full px-2.5 py-1.5 ${tab === t ? 'bg-accent text-white' : 'border border-border'}`}>
             {t === 'client' ? 'New client' : 'New project'}
           </button>
         ))}
@@ -57,14 +57,14 @@ export default function NewClientProject({ clients }: { clients: { id: string; n
           </select>
         </div>
       )}
-      <button onClick={submit} disabled={busy} className="mt-3 bg-accent text-white rounded-md px-3.5 py-2 text-sm font-semibold disabled:opacity-60">
+      <button onClick={submit} disabled={busy} className="mt-3 bg-accent text-white rounded-full px-3.5 py-2 text-sm font-semibold disabled:opacity-60">
         {busy ? 'Saving…' : 'Save'}
       </button>
       <style jsx global>{`
         .input {
           background: rgb(var(--bg));
           border: 1px solid rgb(var(--border));
-          border-radius: 7px;
+          border-radius: 10px;
           padding: 8px 9px;
           font-size: 13px;
           color: rgb(var(--fg));

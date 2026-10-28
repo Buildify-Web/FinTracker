@@ -26,7 +26,7 @@ export default function NotifPanel({ onClose, onChanged }: { onClose: () => void
       <div className="fixed top-0 right-0 h-full w-full max-w-sm bg-surface border-l border-border z-50 p-4 overflow-y-auto">
         <div className="flex items-center justify-between mb-3">
           <h2 className="text-[15px] font-semibold">Notifications</h2>
-          <button onClick={onClose} className="text-sm border border-border rounded-md px-2.5 py-1">
+          <button onClick={onClose} className="text-sm border border-border rounded-full px-2.5 py-1">
             Close
           </button>
         </div>
@@ -38,10 +38,10 @@ export default function NotifPanel({ onClose, onChanged }: { onClose: () => void
             <div className="flex-1 min-w-0">
               <div className="text-[12.5px] font-semibold">{a.message}</div>
               <div className="flex gap-1.5 mt-1.5">
-                <a href={a.link} className="text-[11px] border border-border rounded-md px-2 py-1">
+                <a href={a.link} className="text-[11px] border border-border rounded-full px-2 py-1">
                   {a.action}
                 </a>
-                <button onClick={() => resolve(a.id)} className="text-[11px] border border-border rounded-md px-2 py-1">
+                <button onClick={() => resolve(a.id)} className="text-[11px] border border-border rounded-full px-2 py-1">
                   Mark as handled
                 </button>
               </div>

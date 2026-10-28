@@ -2,8 +2,9 @@
 
 import AppChart from '@/components/Chart';
 import { Card } from '@/components/ui';
+import { COLOR_POS, COLOR_WARN, COLOR_ACCENT, COLOR_NEG } from '@/lib/chartColors';
 
-const COLORS = ['#2f7a4f', '#b8860b', '#b5651d', '#b3402f'];
+const COLORS = [COLOR_POS, COLOR_WARN, COLOR_ACCENT, COLOR_NEG];
 
 export default function ReceivablesChart({
   buckets,
@@ -26,7 +27,7 @@ export default function ReceivablesChart({
         <AppChart
           height={190}
           type="bar"
-          data={{ labels: byClient.map((c) => c.name), datasets: [{ data: byClient.map((c) => parseFloat(c.total)), backgroundColor: '#b5651d' }] }}
+          data={{ labels: byClient.map((c) => c.name), datasets: [{ data: byClient.map((c) => parseFloat(c.total)), backgroundColor: COLOR_ACCENT }] }}
           options={{ plugins: { legend: { display: false } } }}
         />
       </Card>

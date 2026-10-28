@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation';
 import AppChart from '@/components/Chart';
 import { Card, Table } from '@/components/ui';
 import { fmtINR, fmtCompactINR, fmtDate } from '@/lib/format';
+import { COLOR_NEG, COLOR_POS } from '@/lib/chartColors';
 
 type Debt = {
   id: string;
@@ -86,9 +87,9 @@ export default function DebtCard({
               labels,
               datasets: [
                 atMinimum
-                  ? { label: 'At minimum payment', data: atMinimum.schedule.map((s) => s.balance), borderColor: '#b3402f', pointRadius: 0, tension: 0.2 }
+                  ? { label: 'At minimum payment', data: atMinimum.schedule.map((s) => s.balance), borderColor: COLOR_NEG, pointRadius: 0, tension: 0.2 }
                   : null,
-                atFull ? { label: 'At full payment', data: atFull.schedule.map((s) => s.balance), borderColor: '#2f7a4f', pointRadius: 0, tension: 0.2 } : null
+                atFull ? { label: 'At full payment', data: atFull.schedule.map((s) => s.balance), borderColor: COLOR_POS, pointRadius: 0, tension: 0.2 } : null
               ].filter(Boolean) as any
             }}
             options={{ scales: { y: { ticks: { callback: (v: number) => fmtCompactINR(v) } } } }}
@@ -113,10 +114,10 @@ export default function DebtCard({
         <div>
           <div className="text-[11px] uppercase tracking-wide font-semibold text-muted mb-2">Log a payment</div>
           <div className="flex flex-wrap items-end gap-2 mb-2.5">
-            <button onClick={() => logPayment('minimum')} disabled={busy} className="text-xs border border-border rounded-md px-2.5 py-1.5">
+            <button onClick={() => logPayment('minimum')} disabled={busy} className="text-xs border border-border rounded-full px-2.5 py-1.5">
               Pay minimum ({fmtCompactINR(parseFloat(debt.minimum_payment))})
             </button>
-            <button onClick={() => logPayment('full')} disabled={busy} className="text-xs border border-border rounded-md px-2.5 py-1.5">
+            <button onClick={() => logPayment('full')} disabled={busy} className="text-xs border border-border rounded-full px-2.5 py-1.5">
               Pay in full
             </button>
           </div>
@@ -131,7 +132,7 @@ export default function DebtCard({
                 </option>
               ))}
             </select>
-            <button onClick={() => logPayment('manual')} disabled={busy} className="bg-accent text-white rounded-md px-3 py-1.5 text-xs font-semibold">
+            <button onClick={() => logPayment('manual')} disabled={busy} className="bg-accent text-white rounded-full px-3 py-1.5 text-xs font-semibold">
               {busy ? '…' : 'Log payment'}
             </button>
           </div>
@@ -148,7 +149,7 @@ export default function DebtCard({
         .input {
           background: rgb(var(--bg));
           border: 1px solid rgb(var(--border));
-          border-radius: 7px;
+          border-radius: 10px;
           padding: 7px 8px;
           font-size: 12.5px;
           color: rgb(var(--fg));

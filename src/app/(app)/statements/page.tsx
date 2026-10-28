@@ -47,7 +47,7 @@ export default async function StatementsPage() {
             <span key="out" className="font-mono text-neg">
               -{fmtINR(s.total_out)}
             </span>,
-            <Link key="l" href={`/statements/${s.id}`} className="text-xs border border-border rounded-md px-2 py-1">
+            <Link key="l" href={`/statements/${s.id}`} className="text-xs border border-border rounded-full px-2 py-1">
               Breakdown
             </Link>
           ])}

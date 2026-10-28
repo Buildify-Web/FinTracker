@@ -23,10 +23,10 @@ export default function AlertList({ alerts }: { alerts: Alert[] }) {
           <div className="flex-1 min-w-0">
             <div className="text-[13px] font-medium">{a.message}</div>
             <div className="flex gap-1.5 mt-1.5">
-              <a href={a.link} className="text-[11px] border border-border rounded-md px-2 py-1">
+              <a href={a.link} className="text-[11px] border border-border rounded-full px-2 py-1">
                 {a.action}
               </a>
-              <button onClick={() => resolve(a.id)} className="text-[11px] border border-border rounded-md px-2 py-1">
+              <button onClick={() => resolve(a.id)} className="text-[11px] border border-border rounded-full px-2 py-1">
                 Mark as handled
               </button>
             </div>

@@ -2,6 +2,7 @@ import { getMonthlyPnl, getExpenseByCategory } from '@/lib/queries';
 import { Card, Table } from '@/components/ui';
 import { fmtINR } from '@/lib/format';
 import PnlCharts from './PnlCharts';
+import DownloadPdfButton from './DownloadPdfButton';
 
 export const dynamic = 'force-dynamic';
 
@@ -20,8 +21,12 @@ export default async function PnlPage() {
   ]);
   const prevMap = new Map(prevCats.map((c) => [c.name, parseFloat(c.total)]));
   const growing = currCats
-    .map((c) => ({ name: c.name, growth: parseFloat(c.total) - (prevMap.get(c.name) ?? 0) }))
-    .sort((a, b) => b.growth - a.growth)
+    .map((c) => {
+      const p = prevMap.get(c.name) ?? 0;
+      const curr = parseFloat(c.total);
+      return { name: c.name, pct: p > 0 ? Math.round((curr / p - 1) * 100) : 100 };
+    })
+    .sort((a, b) => b.pct - a.pct)
     .slice(0, 5);
 
   function pct(c: number, p: number) {
@@ -32,15 +37,35 @@ export default async function PnlPage() {
 
   return (
     <>
-      <Card title="Monthly income statement" sub={`${curr.label} vs ${prev?.label ?? '—'}`}>
+      <Card title="Monthly income statement" sub={`${curr.label} · Accrual basis`} action={<DownloadPdfButton />}>
         <Table
           head={['Line', 'This month', 'Last month', 'Change']}
           rows={[
             ['Revenue', fmtINR(curr.revenue), prev ? fmtINR(prev.revenue) : '—', prev ? pct(curr.revenue, prev.revenue) : '—'],
-            ['Direct costs', fmtINR(curr.direct), prev ? fmtINR(prev.direct) : '—', prev ? pct(curr.direct, prev.direct) : '—'],
-            ['Gross profit', fmtINR(curr.revenue - curr.direct), prev ? fmtINR(prev.revenue - prev.direct) : '—', prev ? pct(curr.revenue - curr.direct, prev.revenue - prev.direct) : '—'],
+            ['Cost of delivery', fmtINR(curr.direct), prev ? fmtINR(prev.direct) : '—', prev ? pct(curr.direct, prev.direct) : '—'],
+            [
+              <span key="l" className="text-accent font-semibold">
+                Gross profit
+              </span>,
+              <span key="c" className="text-accent font-semibold">
+                {fmtINR(curr.revenue - curr.direct)}
+              </span>,
+              prev ? fmtINR(prev.revenue - prev.direct) : '—',
+              prev ? pct(curr.revenue - curr.direct, prev.revenue - prev.direct) : '—'
+            ],
             ['Operating expenses', fmtINR(curr.expense), prev ? fmtINR(prev.expense) : '—', prev ? pct(curr.expense, prev.expense) : '—'],
-            [<b key="l">Net profit</b>, <b key="c">{fmtINR(curr.profit)}</b>, <b key="p">{prev ? fmtINR(prev.profit) : '—'}</b>, prev ? pct(curr.profit, prev.profit) : '—']
+            [
+              <span key="l" className="text-accent font-bold">
+                Net profit
+              </span>,
+              <span key="c" className="text-accent font-bold">
+                {fmtINR(curr.profit)}
+              </span>,
+              <span key="p" className="font-semibold">
+                {prev ? fmtINR(prev.profit) : '—'}
+              </span>,
+              prev ? pct(curr.profit, prev.profit) : '—'
+            ]
           ]}
         />
       </Card>
