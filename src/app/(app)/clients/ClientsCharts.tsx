@@ -1,7 +1,7 @@
 'use client';
 
 import AppChart from '@/components/Chart';
-import { Card } from '@/components/ui';
+import ChartGroup, { ChartItem } from '@/components/ChartGroup';
 import { fmtCompactINR } from '@/lib/format';
 import { COLOR_POS, COLOR_WARN, COLOR_NEG } from '@/lib/chartColors';
 
@@ -24,8 +24,8 @@ export default function ClientsCharts({
   const maxRevenue = Math.max(1, ...clients.map((c) => c.revenue));
 
   return (
-    <div className="grid lg:grid-cols-2 gap-3.5">
-      <Card title="Project margin" sub="Green >40% · Amber 25-40% · Red <25%">
+    <ChartGroup>
+      <ChartItem id="clients-margin" title="Profit margin by client" sub="green above 40% · amber 25–40% · red below 25%">
         <div className="flex flex-col gap-4">
           {sorted.map((f) => (
             <div key={f.label}>
@@ -39,8 +39,8 @@ export default function ClientsCharts({
             </div>
           ))}
         </div>
-      </Card>
-      <Card title="Revenue vs margin" sub="Bubble size = total billed">
+      </ChartItem>
+      <ChartItem id="clients-income-margin" title="Clients: income vs margin" sub="bigger bubble = more billed">
         <AppChart
           type="bubble"
           data={{
@@ -70,7 +70,7 @@ export default function ClientsCharts({
             }
           }}
         />
-      </Card>
-    </div>
+      </ChartItem>
+    </ChartGroup>
   );
 }

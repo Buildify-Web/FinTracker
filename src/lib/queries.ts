@@ -1,7 +1,14 @@
+import { unstable_cache } from 'next/cache';
 import { query, queryOne } from './db';
 
+// Heavy, shared reads are cached for a minute and dropped on any write (see
+// invalidateFinanceCache in db.ts). Only plain-JSON results can go through here.
+function cached<A extends unknown[], R>(fn: (...args: A) => Promise<R>, key: string) {
+  return unstable_cache(fn, [key], { tags: ['finance'], revalidate: 60 });
+}
+
 export type Account = { id: string; name: string; type: string; opening_balance: string };
-export type Category = { id: string; name: string; type: 'income' | 'direct' | 'expense'; color: string };
+export type Category = { id: string; name: string; type: 'income' | 'direct' | 'expense'; color: string; monthly_budget: string | null };
 export type Client = { id: string; name: string; payment_terms_days: number; contact_email: string | null };
 export type Project = {
   id: string;
@@ -11,6 +18,7 @@ export type Project = {
   budget: string;
   status: string;
   start_date: string | null;
+  end_date: string | null;
 };
 
 export async function getAccounts() {
@@ -18,7 +26,7 @@ export async function getAccounts() {
 }
 
 export async function getCategories() {
-  return query<Category>('SELECT * FROM categories ORDER BY type, name');
+  return query<Category>('SELECT * FROM categories WHERE NOT archived ORDER BY type, name');
 }
 
 export async function getClients() {
@@ -50,41 +58,62 @@ export async function getAccountBalance(accountId: string, asOf?: string): Promi
 }
 
 export async function getTotalCash(asOf?: string): Promise<number> {
+  // Sum the two sides separately: joining accounts to transactions first would
+  // repeat each opening balance once per transaction row.
   const row = await queryOne<{ total: string }>(
-    `SELECT COALESCE(SUM(a.opening_balance), 0) +
-        COALESCE(SUM(CASE WHEN t.direction = 'in' THEN t.amount WHEN t.direction = 'out' THEN -t.amount ELSE 0 END), 0) AS total
-     FROM accounts a
-     LEFT JOIN transactions t ON t.account_id = a.id AND ($1::date IS NULL OR t.date <= $1)`,
+    `SELECT (SELECT COALESCE(SUM(opening_balance), 0) FROM accounts) +
+        (SELECT COALESCE(SUM(CASE WHEN direction = 'in' THEN amount WHEN direction = 'out' THEN -amount ELSE 0 END), 0)
+         FROM transactions WHERE account_id IS NOT NULL AND ($1::date IS NULL OR date <= $1)) AS total`,
     [asOf ?? null]
   );
   return row ? parseFloat(row.total) : 0;
 }
 
-export async function getAccountBalancesByMonth(months = 6) {
-  // One balance-as-of-month-end per account, for the stacked chart.
-  const accounts = await getAccounts();
-  const monthEnds = await query<{ month_end: string; label: string }>(
-    `SELECT (date_trunc('month', d) + interval '1 month - 1 day')::date AS month_end,
-            to_char(d, 'Mon YY') AS label
-     FROM generate_series(date_trunc('month', now()) - interval '${months - 1} months', date_trunc('month', now()), interval '1 month') d`
-  );
-  const series = [];
-  for (const m of monthEnds) {
-    const balances: Record<string, number> = {};
-    for (const a of accounts) balances[a.id] = await getAccountBalance(a.id, m.month_end);
-    series.push({ label: m.label, balances });
+async function getAccountBalancesByMonthUncached(months = 6) {
+  // One balance-as-of-month-end per account, for the stacked chart (single query).
+  const [accounts, rows] = await Promise.all([
+    getAccounts(),
+    query<{ month_end: string; label: string; account_id: string; balance: string }>(
+      `WITH m AS (
+         SELECT (date_trunc('month', d) + interval '1 month - 1 day')::date AS month_end,
+                to_char(d, 'Mon YY') AS label
+         FROM generate_series(date_trunc('month', now()) - ($1::int - 1) * interval '1 month', date_trunc('month', now()), interval '1 month') d
+       )
+       SELECT m.month_end, m.label, a.id AS account_id,
+              a.opening_balance + COALESCE(SUM(CASE WHEN t.direction = 'in' THEN t.amount ELSE -t.amount END), 0) AS balance
+       FROM m CROSS JOIN accounts a
+       LEFT JOIN transactions t ON t.account_id = a.id AND t.date <= m.month_end
+       GROUP BY m.month_end, m.label, a.id, a.opening_balance
+       ORDER BY m.month_end`,
+      [months]
+    )
+  ]);
+  const byMonth = new Map<string, { label: string; balances: Record<string, number> }>();
+  for (const r of rows) {
+    let entry = byMonth.get(r.month_end);
+    if (!entry) byMonth.set(r.month_end, (entry = { label: r.label, balances: {} }));
+    entry.balances[r.account_id] = parseFloat(r.balance);
   }
-  return { accounts, series };
+  return { accounts, series: [...byMonth.values()] };
 }
+export const getAccountBalancesByMonth = cached(getAccountBalancesByMonthUncached, 'getAccountBalancesByMonth');
 
-export async function getCashSeries(days = 180) {
-  const rows = await query<{ d: string }>(
-    `SELECT generate_series(current_date - interval '${days - 1} days', current_date, interval '1 day')::date AS d`
+async function getCashSeriesUncached(days = 180) {
+  // Running total cash for each of the last `days` days, in one round trip.
+  const rows = await query<{ date: string; cash: string }>(
+    `WITH net AS (
+       SELECT date, SUM(CASE WHEN direction = 'in' THEN amount WHEN direction = 'out' THEN -amount ELSE 0 END) AS amt
+       FROM transactions GROUP BY date
+     ), base AS (SELECT COALESCE(SUM(opening_balance), 0) AS opening FROM accounts)
+     SELECT to_char(d, 'YYYY-MM-DD') AS date,
+            base.opening + COALESCE((SELECT SUM(amt) FROM net WHERE net.date <= d), 0) AS cash
+     FROM base, generate_series(current_date - ($1::int - 1), current_date, interval '1 day') AS d
+     ORDER BY d`,
+    [days]
   );
-  const out = [];
-  for (const r of rows) out.push({ date: r.d, cash: await getTotalCash(r.d) });
-  return out;
+  return rows.map((r) => ({ date: r.date, cash: parseFloat(r.cash) }));
 }
+export const getCashSeries = cached(getCashSeriesUncached, 'getCashSeries');
 
 // ---------- Net burn / runway (Section 9) ----------
 
@@ -121,7 +150,7 @@ export type MonthlyPnl = {
   net_margin: number;
 };
 
-export async function getMonthlyPnl(months = 12): Promise<MonthlyPnl[]> {
+async function getMonthlyPnlUncached(months = 12): Promise<MonthlyPnl[]> {
   const rows = await query<{
     month: string;
     revenue: string;
@@ -160,6 +189,7 @@ export async function getMonthlyPnl(months = 12): Promise<MonthlyPnl[]> {
     };
   });
 }
+export const getMonthlyPnl = cached(getMonthlyPnlUncached, 'getMonthlyPnl');
 
 export async function getExpenseByCategory(monthStart: string) {
   return query<{ name: string; total: string }>(
@@ -234,13 +264,14 @@ export async function getOutstandingByClient() {
   );
 }
 
-export async function getAvgDaysToPay(clientId: string): Promise<number | null> {
-  const row = await queryOne<{ avg_days: string | null }>(
-    `SELECT AVG(paid_date - issue_date) AS avg_days FROM invoices
-     WHERE client_id = $1 AND status = 'paid' AND paid_date IS NOT NULL`,
-    [clientId]
+// Average days-to-pay for every client that has paid invoices, keyed by client id.
+export async function getAvgDaysToPayByClient(): Promise<Map<string, number>> {
+  const rows = await query<{ client_id: string; avg_days: string }>(
+    `SELECT client_id, AVG(paid_date - issue_date) AS avg_days FROM invoices
+     WHERE client_id IS NOT NULL AND status = 'paid' AND paid_date IS NOT NULL
+     GROUP BY client_id`
   );
-  return row?.avg_days != null ? Math.round(parseFloat(row.avg_days)) : null;
+  return new Map(rows.map((r) => [r.client_id, Math.round(parseFloat(r.avg_days))]));
 }
 
 export async function getDSO(): Promise<number> {
@@ -287,35 +318,68 @@ export async function getRecurringCostsByCategory() {
 
 // ---------- Clients & Projects (Section 5.6) ----------
 
-export async function getProjectFinance(projectId: string) {
-  const row = await queryOne<{ revenue: string; direct_cost: string; team_cost: string; budget: string }>(
-    `SELECT
-       (SELECT COALESCE(SUM(amount), 0) FROM invoices WHERE project_id = $1 AND status = 'paid') AS revenue,
-       (SELECT COALESCE(SUM(t.amount), 0) FROM transactions t JOIN categories c ON c.id = t.category_id
-          WHERE t.project_id = $1 AND t.direction = 'out' AND c.type = 'direct') AS direct_cost,
-       (SELECT COALESCE(SUM(tc.monthly_cost * ta.pct / 100.0), 0) FROM team_allocations ta
-          JOIN team_costs tc ON tc.id = ta.team_cost_id WHERE ta.project_id = $1) AS team_cost,
-       (SELECT budget FROM projects WHERE id = $1) AS budget`,
-    [projectId]
+export type ProjectFinance = { revenue: number; cost: number; margin: number; budgetUsed: number };
+
+// Finance numbers for every project at once (two queries total, however many projects).
+export async function getProjectFinances(): Promise<Map<string, ProjectFinance & { client_id: string | null }>> {
+  const rows = await query<{ id: string; client_id: string | null; budget: string; revenue: string; direct_cost: string; team_cost: string }>(
+    `SELECT p.id, p.client_id, p.budget,
+       COALESCE(inv.revenue, 0) AS revenue,
+       COALESCE(dc.direct_cost, 0) AS direct_cost,
+       COALESCE(tm.team_cost, 0) AS team_cost
+     FROM projects p
+     LEFT JOIN (SELECT project_id, SUM(amount) AS revenue FROM invoices WHERE status = 'paid' GROUP BY project_id) inv ON inv.project_id = p.id
+     LEFT JOIN (SELECT t.project_id, SUM(t.amount) AS direct_cost
+                FROM transactions t JOIN categories c ON c.id = t.category_id
+                WHERE t.direction = 'out' AND c.type = 'direct' GROUP BY t.project_id) dc ON dc.project_id = p.id
+     LEFT JOIN (SELECT ta.project_id, SUM(tc.monthly_cost * ta.pct / 100.0) AS team_cost
+                FROM team_allocations ta JOIN team_costs tc ON tc.id = ta.team_cost_id
+                WHERE (tc.start_date IS NULL OR tc.start_date <= current_date) AND (tc.end_date IS NULL OR tc.end_date >= current_date)
+                GROUP BY ta.project_id) tm ON tm.project_id = p.id`
   );
-  if (!row) return { revenue: 0, cost: 0, margin: 0, budgetUsed: 0 };
-  const revenue = parseFloat(row.revenue);
-  const cost = parseFloat(row.direct_cost) + parseFloat(row.team_cost);
-  const budget = parseFloat(row.budget);
-  const margin = revenue ? ((revenue - cost) / revenue) * 100 : 0;
-  const budgetUsed = budget ? Math.min(100, Math.round((cost / budget) * 100)) : 0;
-  return { revenue, cost, margin, budgetUsed };
+  const out = new Map<string, ProjectFinance & { client_id: string | null }>();
+  for (const r of rows) {
+    const revenue = parseFloat(r.revenue);
+    const cost = parseFloat(r.direct_cost) + parseFloat(r.team_cost);
+    const budget = parseFloat(r.budget);
+    out.set(r.id, {
+      client_id: r.client_id,
+      revenue,
+      cost,
+      margin: revenue ? ((revenue - cost) / revenue) * 100 : 0,
+      budgetUsed: budget ? Math.min(100, Math.round((cost / budget) * 100)) : 0
+    });
+  }
+  return out;
 }
 
-export async function getClientFinance(clientId: string) {
-  const row = await queryOne<{ revenue: string }>(
-    `SELECT COALESCE(SUM(amount), 0) AS revenue FROM invoices WHERE client_id = $1 AND status = 'paid'`,
-    [clientId]
-  );
-  const projects = await query<{ id: string }>(`SELECT id FROM projects WHERE client_id = $1`, [clientId]);
-  let marginSum = 0;
-  for (const p of projects) marginSum += (await getProjectFinance(p.id)).margin;
-  return { revenue: row ? parseFloat(row.revenue) : 0, avgMargin: projects.length ? marginSum / projects.length : 0 };
+const EMPTY_PROJECT_FINANCE: ProjectFinance = { revenue: 0, cost: 0, margin: 0, budgetUsed: 0 };
+
+export function projectFinanceOf(map: Map<string, ProjectFinance>, projectId: string): ProjectFinance {
+  return map.get(projectId) ?? EMPTY_PROJECT_FINANCE;
+}
+
+// Paid revenue and average project margin for every client, keyed by client id.
+export async function getClientFinances(
+  projectFin?: Map<string, ProjectFinance & { client_id: string | null }>
+): Promise<Map<string, { revenue: number; avgMargin: number }>> {
+  const [rows, fins] = await Promise.all([
+    query<{ client_id: string; revenue: string }>(
+      `SELECT client_id, SUM(amount) AS revenue FROM invoices WHERE client_id IS NOT NULL AND status = 'paid' GROUP BY client_id`
+    ),
+    projectFin ?? getProjectFinances()
+  ]);
+  const margins = new Map<string, number[]>();
+  for (const f of fins.values()) {
+    if (!f.client_id) continue;
+    const list = margins.get(f.client_id) ?? [];
+    list.push(f.margin);
+    margins.set(f.client_id, list);
+  }
+  const out = new Map<string, { revenue: number; avgMargin: number }>();
+  for (const [clientId, list] of margins) out.set(clientId, { revenue: 0, avgMargin: list.reduce((a, b) => a + b, 0) / list.length });
+  for (const r of rows) out.set(r.client_id, { revenue: parseFloat(r.revenue), avgMargin: out.get(r.client_id)?.avgMargin ?? 0 });
+  return out;
 }
 
 // ---------- Debts / Slice (Section: debt tracking) ----------
@@ -331,6 +395,9 @@ export type Debt = {
   due_date: string | null;
   minimum_payment: string;
   full_payment: string;
+  tenure_months: number | null;
+  monthly_payment: string | null;
+  plan_start: string | null;
 };
 
 export async function getDebts() {
@@ -375,6 +442,54 @@ export function payoffProjection(balance: number, aprPct: number, monthlyPayment
   return { schedule, payoffMonths: schedule.length, totalInterest };
 }
 
+// ---------- Budgets & team ----------
+
+export type BudgetLine = { id: string; name: string; type: string; budget: number; spent: number; pct: number };
+
+// This month's spending against each category's monthly budget.
+export async function getBudgetStatus(): Promise<BudgetLine[]> {
+  const rows = await query<{ id: string; name: string; type: string; budget: string; spent: string }>(
+    `SELECT c.id, c.name, c.type, c.monthly_budget AS budget, COALESCE(SUM(t.amount), 0) AS spent
+     FROM categories c
+     LEFT JOIN transactions t ON t.category_id = c.id AND t.direction = 'out'
+       AND t.date >= date_trunc('month', current_date) AND t.date < date_trunc('month', current_date) + interval '1 month'
+     WHERE c.monthly_budget > 0 AND NOT c.archived
+     GROUP BY c.id ORDER BY c.type, c.name`
+  );
+  return rows.map((r) => {
+    const budget = parseFloat(r.budget);
+    const spent = parseFloat(r.spent);
+    return { id: r.id, name: r.name, type: r.type, budget, spent, pct: budget ? Math.round((spent / budget) * 100) : 0 };
+  });
+}
+
+export type TeamMember = {
+  id: string;
+  person_name: string;
+  role: string | null;
+  monthly_cost: string;
+  start_date: string | null;
+  end_date: string | null;
+  category_id: string | null;
+  category_name: string | null;
+  project_id: string | null;
+  project_label: string | null;
+  project_pct: string | null;
+};
+
+export async function getTeam() {
+  return query<TeamMember>(
+    `SELECT tc.*, c.name AS category_name, ta.project_id, ta.pct AS project_pct,
+       p.service_line AS project_label
+     FROM team_costs tc
+     LEFT JOIN categories c ON c.id = tc.category_id
+     LEFT JOIN team_allocations ta ON ta.team_cost_id = tc.id
+     LEFT JOIN projects p ON p.id = ta.project_id
+     LEFT JOIN clients cl ON cl.id = p.client_id
+     ORDER BY tc.start_date NULLS FIRST, tc.person_name`
+  );
+}
+
 // ---------- Alerts (Section 6) ----------
 
 export type Alert = {
@@ -386,16 +501,31 @@ export type Alert = {
   action: string;
 };
 
-export async function getAlerts(): Promise<Alert[]> {
+async function getAlertsUncached(): Promise<Alert[]> {
   const out: Alert[] = [];
-  const settingsRows = await query<{ key: string; value: unknown }>('SELECT key, value FROM settings');
+  const [settingsRows, burn, cash, overdueInvoices, projectFins, projects, debts, resolved, budgets] = await Promise.all([
+    query<{ key: string; value: unknown }>('SELECT key, value FROM settings'),
+    getNetBurnLast3Months(),
+    getTotalCash(),
+    query<{ id: string; number: string; client_name: string; amount: string; days_overdue: number }>(
+      `SELECT iv.id, iv.number, cl.name AS client_name, iv.amount,
+         GREATEST(0, (current_date - iv.due_date))::int AS days_overdue
+       FROM invoices iv LEFT JOIN clients cl ON cl.id = iv.client_id
+       WHERE iv.status != 'paid' AND iv.due_date < current_date`
+    ),
+    getProjectFinances(),
+    query<{ id: string; service_line: string; client_name: string | null; status: string }>(
+      `SELECT p.id, p.service_line, cl.name AS client_name, p.status FROM projects p LEFT JOIN clients cl ON cl.id = p.client_id WHERE p.status = 'active'`
+    ),
+    getDebts(),
+    query<{ alert_key: string }>('SELECT alert_key FROM resolved_alerts'),
+    getBudgetStatus()
+  ]);
   const settings: Record<string, unknown> = {};
   for (const r of settingsRows) settings[r.key] = r.value;
   const cashFloorMonths = Number(settings.cash_floor_months ?? 2);
   const thresholds = (settings.thresholds as Record<string, number>) ?? {};
 
-  const burn = await getNetBurnLast3Months();
-  const cash = await getTotalCash();
   if (burn > 0) {
     const floor = burn * cashFloorMonths;
     if (cash < floor) {
@@ -403,26 +533,20 @@ export async function getAlerts(): Promise<Alert[]> {
         id: 'cash-low',
         type: 'cash',
         severity: 'high',
-        message: `Cash is below the ${cashFloorMonths}-month floor.`,
+        message: `Cash covers less than ${cashFloorMonths} months of spending.`,
         link: '/cash',
-        action: 'View cash'
+        action: 'See cash'
       });
     }
   }
 
-  const overdueInvoices = await query<{ id: string; number: string; client_name: string; amount: string; days_overdue: number }>(
-    `SELECT iv.id, iv.number, cl.name AS client_name, iv.amount,
-       GREATEST(0, (current_date - iv.due_date))::int AS days_overdue
-     FROM invoices iv LEFT JOIN clients cl ON cl.id = iv.client_id
-     WHERE iv.status != 'paid' AND iv.due_date < current_date`
-  );
   for (const iv of overdueInvoices) {
     const high = thresholds.overdueHigh ?? 45;
     const medium = thresholds.overdueMedium ?? 15;
     if (iv.days_overdue >= high) {
-      out.push({ id: `inv-${iv.id}`, type: 'invoice', severity: 'high', message: `${iv.number} (${iv.client_name ?? 'client'}) is ${iv.days_overdue} days overdue.`, link: '/receivables', action: 'Send reminder' });
+      out.push({ id: `inv-${iv.id}`, type: 'invoice', severity: 'high', message: `${iv.number} (${iv.client_name ?? 'client'}) is ${iv.days_overdue} days overdue.`, link: '/receivables', action: 'See invoice' });
     } else if (iv.days_overdue >= medium) {
-      out.push({ id: `inv-${iv.id}`, type: 'invoice', severity: 'medium', message: `${iv.number} (${iv.client_name ?? 'client'}) is ${iv.days_overdue} days overdue.`, link: '/receivables', action: 'Send reminder' });
+      out.push({ id: `inv-${iv.id}`, type: 'invoice', severity: 'medium', message: `${iv.number} (${iv.client_name ?? 'client'}) is ${iv.days_overdue} days overdue.`, link: '/receivables', action: 'See invoice' });
     }
   }
 
@@ -430,37 +554,43 @@ export async function getAlerts(): Promise<Alert[]> {
     `SELECT id, vendor, amount, due_date FROM bills WHERE status != 'paid' AND due_date BETWEEN current_date AND current_date + interval '${thresholds.dueSoonDays ?? 3} days'`
   );
   for (const b of dueSoonBills) {
-    out.push({ id: `bill-${b.id}`, type: 'bill', severity: 'medium', message: `${b.vendor} payment due ${b.due_date}.`, link: '/payables', action: 'View bill' });
+    out.push({ id: `bill-${b.id}`, type: 'bill', severity: 'medium', message: `${b.vendor} is due on ${b.due_date}.`, link: '/payables', action: 'See bill' });
   }
 
   const marginFloor = thresholds.marginFloor ?? 25;
-  const projects = await query<{ id: string; service_line: string; client_name: string | null; status: string }>(
-    `SELECT p.id, p.service_line, cl.name AS client_name, p.status FROM projects p LEFT JOIN clients cl ON cl.id = p.client_id WHERE p.status = 'active'`
-  );
   for (const p of projects) {
-    const fin = await getProjectFinance(p.id);
+    const fin = projectFinanceOf(projectFins, p.id);
     if (fin.revenue > 0 && fin.margin < marginFloor) {
-      out.push({ id: `margin-${p.id}`, type: 'margin', severity: 'medium', message: `${p.client_name ?? ''} · ${p.service_line} margin is ${Math.round(fin.margin)}%, below the ${marginFloor}% floor.`, link: '/clients', action: 'View project' });
+      out.push({ id: `margin-${p.id}`, type: 'margin', severity: 'medium', message: `${p.service_line} is only ${Math.round(fin.margin)}% profitable (target ${marginFloor}%).`, link: '/clients', action: 'See client' });
     }
   }
 
   // Debt alerts: payment due soon, balance near limit.
-  const debts = await getDebts();
   for (const d of debts) {
     if (d.due_date) {
       const days = Math.round((new Date(d.due_date).getTime() - Date.now()) / 86400000);
       if (days >= 0 && days <= (thresholds.dueSoonDays ?? 3)) {
-        out.push({ id: `debt-${d.id}`, type: 'debt', severity: 'medium', message: `${d.name} payment of ${d.minimum_payment} minimum is due in ${days} day(s).`, link: '/debt', action: 'Manage payment' });
+        out.push({ id: `debt-${d.id}`, type: 'debt', severity: 'medium', message: `${d.name}: minimum payment of ₹${d.minimum_payment} is due in ${days} day${days === 1 ? '' : 's'}.`, link: '/debt', action: 'See debt' });
       }
     }
     if (d.credit_limit && parseFloat(d.current_balance) / parseFloat(d.credit_limit) > 0.85) {
-      out.push({ id: `debt-limit-${d.id}`, type: 'debt', severity: 'medium', message: `${d.name} balance is above 85% of its credit limit.`, link: '/debt', action: 'View debt' });
+      out.push({ id: `debt-limit-${d.id}`, type: 'debt', severity: 'medium', message: `${d.name} is over 85% of its credit limit.`, link: '/debt', action: 'See debt' });
     }
   }
 
-  const resolved = await query<{ alert_key: string }>('SELECT alert_key FROM resolved_alerts');
+  // Budget alerts are keyed by month so a new month starts fresh even if last month's was dismissed.
+  const monthKey = new Date().toISOString().slice(0, 7);
+  for (const b of budgets) {
+    if (b.pct >= 100) {
+      out.push({ id: `budget-${b.id}-${monthKey}`, type: 'budget', severity: 'high', message: `${b.name} is over budget this month (${b.pct}% used).`, link: '/pnl', action: 'See budgets' });
+    } else if (b.pct >= 90) {
+      out.push({ id: `budget-${b.id}-${monthKey}`, type: 'budget', severity: 'medium', message: `${b.name} has used ${b.pct}% of this month's budget.`, link: '/pnl', action: 'See budgets' });
+    }
+  }
+
   const resolvedSet = new Set(resolved.map((r) => r.alert_key));
   return out
     .filter((a) => !resolvedSet.has(a.id))
     .sort((a, b) => ({ high: 0, medium: 1, low: 2, info: 3 }[a.severity] - { high: 0, medium: 1, low: 2, info: 3 }[b.severity]));
 }
+export const getAlerts = cached(getAlertsUncached, 'getAlerts');

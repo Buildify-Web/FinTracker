@@ -1,4 +1,5 @@
 import { Pool, types, type QueryResultRow } from 'pg';
+import { revalidateTag } from 'next/cache';
 
 // node-postgres parses `date`/`timestamp` columns into JS Date objects by
 // default, which both breaks the plain YYYY-MM-DD strings this app expects
@@ -40,8 +41,21 @@ function createPool() {
 const pool = globalThis.__pgPool ?? createPool();
 if (process.env.NODE_ENV !== 'production') globalThis.__pgPool = pool;
 
+// Cached reads in queries.ts are tagged 'finance'; any write drops them so the
+// next page load never shows stale numbers.
+export function invalidateFinanceCache() {
+  try {
+    revalidateTag('finance', { expire: 0 });
+  } catch {
+    /* not in a request scope (scripts) — nothing cached to drop */
+  }
+}
+
+const WRITE_RE = /^\s*(insert|update|delete|truncate)\b/i;
+
 export async function query<T extends QueryResultRow = QueryResultRow>(text: string, params: unknown[] = []): Promise<T[]> {
   const res = await pool.query<T>(text, params as never[]);
+  if (WRITE_RE.test(text)) invalidateFinanceCache();
   return res.rows;
 }
 

@@ -1,11 +1,32 @@
 'use client';
 
+import Link from 'next/link';
 import { useRouter } from 'next/navigation';
+import { Check } from 'lucide-react';
 import { SeverityDot, Empty } from './ui';
+import { Button } from './ui/button';
 
-type Alert = { id: string; severity: string; message: string; link: string; action: string };
+export type AlertItem = { id: string; severity: string; message: string; link: string; action: string };
 
-export default function AlertList({ alerts }: { alerts: Alert[] }) {
+// One alert: the message is the link to where you can act; a tick dismisses it.
+export function AlertRow({ alert, onResolve, onNavigate }: { alert: AlertItem; onResolve: (id: string) => void; onNavigate?: () => void }) {
+  return (
+    <div className="flex items-start gap-2.5 py-2.5 border-b border-border last:border-0">
+      <div className="pt-1.5">
+        <SeverityDot severity={alert.severity} />
+      </div>
+      <Link href={alert.link} onClick={onNavigate} className="flex-1 min-w-0 group">
+        <div className="text-[13px] font-medium group-hover:text-accent transition-colors">{alert.message}</div>
+        <div className="text-[11.5px] text-muted mt-0.5">{alert.action} →</div>
+      </Link>
+      <Button variant="ghost" size="icon" className="h-7 w-7 flex-shrink-0" title="Mark as handled" aria-label="Mark as handled" onClick={() => onResolve(alert.id)}>
+        <Check size={15} />
+      </Button>
+    </div>
+  );
+}
+
+export default function AlertList({ alerts }: { alerts: AlertItem[] }) {
   const router = useRouter();
 
   async function resolve(id: string) {
@@ -13,25 +34,12 @@ export default function AlertList({ alerts }: { alerts: Alert[] }) {
     router.refresh();
   }
 
-  if (!alerts.length) return <Empty>No open alerts. All clear.</Empty>;
+  if (!alerts.length) return <Empty>All clear — nothing needs attention.</Empty>;
 
   return (
     <div>
       {alerts.map((a) => (
-        <div key={a.id} className="flex gap-2.5 py-2.5 border-b border-border last:border-0">
-          <SeverityDot severity={a.severity} />
-          <div className="flex-1 min-w-0">
-            <div className="text-[13px] font-medium">{a.message}</div>
-            <div className="flex gap-1.5 mt-1.5">
-              <a href={a.link} className="text-[11px] border border-border rounded-full px-2 py-1">
-                {a.action}
-              </a>
-              <button onClick={() => resolve(a.id)} className="text-[11px] border border-border rounded-full px-2 py-1">
-                Mark as handled
-              </button>
-            </div>
-          </div>
-        </div>
+        <AlertRow key={a.id} alert={a} onResolve={resolve} />
       ))}
     </div>
   );

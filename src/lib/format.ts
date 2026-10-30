@@ -21,12 +21,23 @@ export function fmtCompactINR(n: number | string): string {
   return (neg ? '-' : '') + '₹' + out;
 }
 
-export function fmtDate(d: string | Date): string {
+// Fixed month names (not toLocaleDateString): Node and browsers disagree on "Sep" vs "Sept" for en-IN,
+// which breaks hydration. Plain YYYY-MM-DD strings are read as-is so there's no timezone shift either.
+const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+
+function parts(d: string | Date): { y: number; m: number; day: number } {
+  const iso = typeof d === 'string' ? d.match(/^(\d{4})-(\d{2})-(\d{2})/) : null;
+  if (iso) return { y: +iso[1], m: +iso[2] - 1, day: +iso[3] };
   const date = typeof d === 'string' ? new Date(d) : d;
-  return date.toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' });
+  return { y: date.getFullYear(), m: date.getMonth(), day: date.getDate() };
+}
+
+export function fmtDate(d: string | Date): string {
+  const { y, m, day } = parts(d);
+  return `${String(day).padStart(2, '0')} ${MONTHS[m]} ${y}`;
 }
 
 export function monthLabel(d: string | Date): string {
-  const date = typeof d === 'string' ? new Date(d) : d;
-  return date.toLocaleDateString('en-IN', { month: 'short', year: '2-digit' });
+  const { y, m } = parts(d);
+  return `${MONTHS[m]} ${String(y).slice(2)}`;
 }

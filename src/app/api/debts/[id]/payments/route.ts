@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { query, pool } from '@/lib/db';
+import { query, pool, invalidateFinanceCache } from '@/lib/db';
 import { getDebtPayments } from '@/lib/queries';
 
 export const dynamic = 'force-dynamic';
@@ -41,5 +41,6 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     throw err;
   } finally {
     client.release();
+    invalidateFinanceCache();
   }
 }

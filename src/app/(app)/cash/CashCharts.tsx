@@ -1,7 +1,7 @@
 'use client';
 
 import AppChart from '@/components/Chart';
-import { Card } from '@/components/ui';
+import ChartGroup, { ChartItem } from '@/components/ChartGroup';
 import { fmtCompactINR } from '@/lib/format';
 
 import { CHART_COLORS as COLORS } from '@/lib/chartColors';
@@ -16,8 +16,8 @@ export default function CashCharts({
   waterfall: { opening: number; inflow: number; outflow: number; closing: number };
 }) {
   return (
-    <div className="grid lg:grid-cols-2 gap-3.5">
-      <Card title="Balance per account" sub="stacked, last 6mo">
+    <ChartGroup>
+      <ChartItem id="cash-balance-by-account" title="Balance by account" sub="last 6 months">
         <AppChart
           type="bar"
           data={{
@@ -31,12 +31,12 @@ export default function CashCharts({
           }}
           options={{ scales: { y: { ticks: { callback: (v: number) => fmtCompactINR(v) } } } }}
         />
-      </Card>
-      <Card title="Monthly waterfall" sub="this month">
+      </ChartItem>
+      <ChartItem id="cash-flow-month" title="Cash flow this month" sub="start → in → out → now">
         <AppChart
           type="bar"
           data={{
-            labels: ['Opening', 'Inflows', 'Outflows', 'Closing'],
+            labels: ['Start of month', 'Money in', 'Money out', 'Now'],
             datasets: [
               {
                 data: [waterfall.opening, waterfall.inflow, -waterfall.outflow, waterfall.closing],
@@ -46,7 +46,7 @@ export default function CashCharts({
           }}
           options={{ plugins: { legend: { display: false } }, scales: { y: { ticks: { callback: (v: number) => fmtCompactINR(v) } } } }}
         />
-      </Card>
-    </div>
+      </ChartItem>
+    </ChartGroup>
   );
 }

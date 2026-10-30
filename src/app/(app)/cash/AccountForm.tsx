@@ -2,9 +2,14 @@
 
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
+import { Plus } from 'lucide-react';
+import { Button } from '@/components/ui/button';
+import { FormDialog, useCloseDialog } from '@/components/ui/form-dialog';
+import { Field } from '@/components/Field';
 
-export default function AccountForm() {
+function AccountFields() {
   const router = useRouter();
+  const close = useCloseDialog();
   const [name, setName] = useState('');
   const [type, setType] = useState('bank');
   const [opening, setOpening] = useState('');
@@ -21,41 +26,41 @@ export default function AccountForm() {
     setBusy(false);
     setName('');
     setOpening('');
+    close();
     router.refresh();
   }
 
   return (
-    <div className="flex flex-wrap items-end gap-2">
-      <div className="flex flex-col gap-1">
-        <label className="text-[11px] uppercase tracking-wide font-semibold text-muted">Name</label>
-        <input value={name} onChange={(e) => setName(e.target.value)} placeholder="e.g. HDFC Current" className="input" />
+    <div className="grid gap-3">
+      <Field label="Name">
+        <input value={name} onChange={(e) => setName(e.target.value)} placeholder="e.g. HDFC Current" className="input" autoFocus />
+      </Field>
+      <div className="grid grid-cols-2 gap-3">
+        <Field label="Type">
+          <select value={type} onChange={(e) => setType(e.target.value)} className="input">
+            <option value="bank">Bank</option>
+            <option value="gateway">UPI / Razorpay</option>
+            <option value="cash">Cash</option>
+            <option value="card">Card</option>
+          </select>
+        </Field>
+        <Field label="Balance today (₹)">
+          <input type="number" value={opening} onChange={(e) => setOpening(e.target.value)} placeholder="0" className="input" />
+        </Field>
       </div>
-      <div className="flex flex-col gap-1">
-        <label className="text-[11px] uppercase tracking-wide font-semibold text-muted">Type</label>
-        <select value={type} onChange={(e) => setType(e.target.value)} className="input">
-          <option value="bank">Bank</option>
-          <option value="gateway">Gateway (UPI/Razorpay)</option>
-          <option value="cash">Cash</option>
-          <option value="card">Card</option>
-        </select>
-      </div>
-      <div className="flex flex-col gap-1">
-        <label className="text-[11px] uppercase tracking-wide font-semibold text-muted">Opening balance (₹)</label>
-        <input type="number" value={opening} onChange={(e) => setOpening(e.target.value)} placeholder="0" className="input" />
-      </div>
-      <button onClick={submit} disabled={busy || !name} className="bg-accent text-white rounded-full px-3.5 py-2 text-sm font-semibold disabled:opacity-60">
+      <Button onClick={submit} disabled={busy || !name} className="justify-self-end">
         {busy ? 'Adding…' : 'Add account'}
-      </button>
-      <style jsx global>{`
-        .input {
-          background: rgb(var(--bg));
-          border: 1px solid rgb(var(--border));
-          border-radius: 10px;
-          padding: 8px 9px;
-          font-size: 13px;
-          color: rgb(var(--fg));
-        }
-      `}</style>
+      </Button>
     </div>
+  );
+}
+
+// `inline` shows the form directly (first-run); otherwise it hides behind an "Add account" button.
+export default function AccountForm({ inline = false }: { inline?: boolean }) {
+  if (inline) return <AccountFields />;
+  return (
+    <FormDialog trigger={<><Plus size={14} /> Add account</>} title="Add an account" description="Where does your money sit — a bank, UPI wallet, cash?">
+      <AccountFields />
+    </FormDialog>
   );
 }

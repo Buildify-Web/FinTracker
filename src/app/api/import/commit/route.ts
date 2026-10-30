@@ -1,10 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server';
 import crypto from 'node:crypto';
-import { pool, query } from '@/lib/db';
+import { pool, query, invalidateFinanceCache } from '@/lib/db';
 
 export const dynamic = 'force-dynamic';
 
-type Mapping = { date: string; description: string; amount?: string; debit?: string; credit?: string };
+type Mapping = { date: string; description: string; amount?: string; debit?: string; credit?: string; type?: string };
 type Row = Record<string, string>;
 
 function parseAmount(v: string | undefined): number {
@@ -16,15 +16,16 @@ function parseAmount(v: string | undefined): number {
 
 function parseDate(v: string): string | null {
   if (!v) return null;
-  const direct = new Date(v);
-  if (!Number.isNaN(direct.getTime())) return direct.toISOString().slice(0, 10);
-  // dd/mm/yyyy or dd-mm-yyyy
-  const m = v.match(/^(\d{1,2})[/-](\d{1,2})[/-](\d{2,4})$/);
+  v = v.trim();
+  // dd/mm/yyyy, dd-mm-yyyy or dd.mm.yyyy (Indian order; must be checked before Date(), which reads these as mm-dd)
+  const m = v.match(/^(\d{1,2})[/.-](\d{1,2})[/.-](\d{2,4})$/);
   if (m) {
     const [, d, mo, y] = m;
     const year = y.length === 2 ? `20${y}` : y;
     return `${year}-${mo.padStart(2, '0')}-${d.padStart(2, '0')}`;
   }
+  const direct = new Date(v);
+  if (!Number.isNaN(direct.getTime())) return direct.toISOString().slice(0, 10);
   return null;
 }
 
@@ -71,6 +72,9 @@ export async function POST(req: NextRequest) {
           amount = Math.abs(credit);
           direction = 'in';
         }
+      } else if (mapping.amount && mapping.type) {
+        amount = Math.abs(parseAmount(row[mapping.amount]));
+        direction = /^\s*d/i.test(row[mapping.type] || '') ? 'out' : 'in';
       } else if (mapping.amount) {
         const raw = parseAmount(row[mapping.amount]);
         amount = Math.abs(raw);
@@ -124,5 +128,6 @@ export async function POST(req: NextRequest) {
     throw err;
   } finally {
     client.release();
+    invalidateFinanceCache();
   }
 }

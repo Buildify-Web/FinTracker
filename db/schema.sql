@@ -213,3 +213,43 @@ CREATE TABLE IF NOT EXISTS resolved_alerts (
   alert_key TEXT PRIMARY KEY,
   resolved_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
+
+-- ---------- Budgets, custom categories, team & planned hires ----------
+-- Additive only (safe to re-run): monthly budget per category, and categories
+-- are archived instead of deleted so past transactions keep their label and
+-- the seed above can't resurrect one the user removed.
+ALTER TABLE categories ADD COLUMN IF NOT EXISTS monthly_budget NUMERIC(14,2);
+ALTER TABLE categories ADD COLUMN IF NOT EXISTS archived BOOLEAN NOT NULL DEFAULT false;
+
+INSERT INTO categories (name, type, color) VALUES
+  ('R&D', 'expense', '#7c3aed'),
+  ('Hiring & recruitment', 'expense', '#b3402f')
+ON CONFLICT (name) DO NOTHING;
+
+-- A team member with a future start_date is a planned hire; the forecast adds
+-- their cost from that date. end_date marks someone leaving.
+ALTER TABLE team_costs ADD COLUMN IF NOT EXISTS role TEXT;
+ALTER TABLE team_costs ADD COLUMN IF NOT EXISTS start_date DATE;
+ALTER TABLE team_costs ADD COLUMN IF NOT EXISTS end_date DATE;
+ALTER TABLE team_costs ADD COLUMN IF NOT EXISTS category_id UUID REFERENCES categories(id) ON DELETE SET NULL;
+
+CREATE INDEX IF NOT EXISTS idx_transactions_category ON transactions(category_id);
+CREATE INDEX IF NOT EXISTS idx_invoices_client ON invoices(client_id);
+
+-- Imported statement rows the user has already triaged (turned into an invoice/bill, or left as is).
+ALTER TABLE transactions ADD COLUMN IF NOT EXISTS reviewed BOOLEAN NOT NULL DEFAULT false;
+
+-- Money received against a debt (e.g. a loan from family). One row per bank transaction, so re-saving can't double count.
+CREATE TABLE IF NOT EXISTS debt_draws (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  debt_id UUID NOT NULL REFERENCES debts(id) ON DELETE CASCADE,
+  amount NUMERIC(14,2) NOT NULL CHECK (amount > 0),
+  drawn_date DATE NOT NULL,
+  transaction_id UUID UNIQUE REFERENCES transactions(id) ON DELETE CASCADE,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+-- Repayment plan for a debt: how long, how much a month, and when the first instalment is due.
+ALTER TABLE debts ADD COLUMN IF NOT EXISTS tenure_months INT;
+ALTER TABLE debts ADD COLUMN IF NOT EXISTS monthly_payment NUMERIC(14,2);
+ALTER TABLE debts ADD COLUMN IF NOT EXISTS plan_start DATE;

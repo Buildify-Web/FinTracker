@@ -8,22 +8,22 @@ type Account = { id: string; name: string };
 
 export default function StatementImporter() {
   const router = useRouter();
-  const [open, setOpen] = useState(false);
   const [accounts, setAccounts] = useState<Account[]>([]);
   const [kind, setKind] = useState<'bank' | 'slice'>('bank');
   const [accountId, setAccountId] = useState('');
   const [filename, setFilename] = useState('');
   const [headers, setHeaders] = useState<string[]>([]);
   const [rows, setRows] = useState<Record<string, string>[]>([]);
-  const [mapping, setMapping] = useState({ date: '', description: '', amount: '', debit: '', credit: '' });
-  const [mode, setMode] = useState<'signed' | 'debitCredit'>('signed');
+  const [mapping, setMapping] = useState({ date: '', description: '', amount: '', debit: '', credit: '', type: '' });
+  const [mode, setMode] = useState<'signed' | 'debitCredit' | 'amountType'>('signed');
   const [result, setResult] = useState<{ inserted: number; skipped: number; total: number } | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const [showMapping, setShowMapping] = useState(false);
 
   useEffect(() => {
-    if (open) fetch('/api/reference').then((r) => r.json()).then((d) => setAccounts(d.accounts));
-  }, [open]);
+    fetch('/api/reference').then((r) => r.json()).then((d) => setAccounts(d.accounts));
+  }, []);
 
   function onFile(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];
@@ -31,21 +31,36 @@ export default function StatementImporter() {
     setFilename(file.name);
     setResult(null);
     setError(null);
-    Papa.parse<Record<string, string>>(file, {
-      header: true,
+    // Bank exports often have an account-details preamble and a footer; parse as raw rows, find the real header row,
+    // and keep only rows that start with a date.
+    Papa.parse<string[]>(file, {
       skipEmptyLines: true,
       complete: (res) => {
-        const fields = res.meta.fields ?? [];
+        const raw = res.data.map((r) => r.map((c) => (c ?? '').trim()));
+        const hasDate = (r: string[]) => r.some((c) => /date/i.test(c));
+        const hasText = (r: string[]) => r.some((c) => /particulars|description|narration|details|merchant/i.test(c));
+        let hi = raw.findIndex((r) => r.length > 2 && hasDate(r) && hasText(r));
+        if (hi < 0) hi = 0;
+        const fields = raw[hi];
+        const dateCol = Math.max(0, fields.findIndex((f) => /date/i.test(f)));
+        const data = raw
+          .slice(hi + 1)
+          .filter((r) => /^\d{1,4}[-/.]\d{1,2}[-/.]\d{1,4}/.test(r[dateCol] ?? ''))
+          .map((r) => Object.fromEntries(fields.map((f, i) => [f, r[i] ?? ''])));
         setHeaders(fields);
-        setRows(res.data);
+        setRows(data);
         const guess = (names: string[]) => fields.find((f) => names.some((n) => f.toLowerCase().includes(n))) || '';
         setMapping({
-          date: guess(['date']),
+          date: guess(['tran date', 'date']),
           description: guess(['description', 'narration', 'particulars', 'details', 'merchant']),
           amount: guess(['amount']),
           debit: guess(['debit', 'withdrawal']),
-          credit: guess(['credit', 'deposit'])
+          credit: guess(['credit', 'deposit']),
+          type: guess(['dr|cr', 'dr/cr', 'cr/dr', 'type'])
         });
+        const typeCol = guess(['dr|cr', 'dr/cr', 'cr/dr']);
+        setMode(typeCol && guess(['amount']) ? 'amountType' : guess(['debit', 'withdrawal']) && guess(['credit', 'deposit']) ? 'debitCredit' : 'signed');
+        setShowMapping(false);
       }
     });
   }
@@ -53,7 +68,9 @@ export default function StatementImporter() {
   async function commit() {
     setBusy(true);
     setError(null);
-    const map = mode === 'signed' ? { date: mapping.date, description: mapping.description, amount: mapping.amount } : { date: mapping.date, description: mapping.description, debit: mapping.debit, credit: mapping.credit };
+    const base = { date: mapping.date, description: mapping.description };
+    const map =
+      mode === 'signed' ? { ...base, amount: mapping.amount } : mode === 'amountType' ? { ...base, amount: mapping.amount, type: mapping.type } : { ...base, debit: mapping.debit, credit: mapping.credit };
     const res = await fetch('/api/import/commit', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -67,25 +84,13 @@ export default function StatementImporter() {
     }
     const data = await res.json();
     setResult(data);
-    router.refresh();
-  }
-
-  if (!open) {
-    return (
-      <button onClick={() => setOpen(true)} className="bg-accent text-white rounded-full px-3.5 py-2 text-sm font-semibold">
-        + Import statement
-      </button>
-    );
+    // Straight to the approval screen so imported rows can be sorted into invoices / bills.
+    if (data.inserted > 0) router.push('/categorize');
+    else router.refresh();
   }
 
   return (
-    <div className="bg-surface border border-border rounded-xl p-4 flex flex-col gap-3.5">
-      <div className="flex items-center justify-between">
-        <h3 className="text-sm font-semibold">Import a statement</h3>
-        <button onClick={() => setOpen(false)} className="text-xs border border-border rounded-full px-2 py-1">
-          Close
-        </button>
-      </div>
+    <div className="flex flex-col gap-3.5">
 
       <div className="grid sm:grid-cols-3 gap-2.5">
         <div className="flex flex-col gap-1">
@@ -115,6 +120,15 @@ export default function StatementImporter() {
       {headers.length > 0 && (
         <>
           <div className="text-xs text-muted">{rows.length} rows detected in {filename}. Map the columns below.</div>
+          {!showMapping && (mapping.date && mapping.description && (mode === 'debitCredit' ? mapping.debit && mapping.credit : mode === 'amountType' ? mapping.amount && mapping.type : mapping.amount)) ? (
+            <div className="text-xs text-muted">
+              Columns matched automatically: date <b className="text-fg">{mapping.date}</b>, description <b className="text-fg">{mapping.description}</b>, amount <b className="text-fg">{mode === 'debitCredit' ? `${mapping.debit} / ${mapping.credit}` : mode === 'amountType' ? `${mapping.amount} + ${mapping.type}` : mapping.amount}</b>.{' '}
+              <button onClick={() => setShowMapping(true)} className="underline">
+                Change
+              </button>
+            </div>
+          ) : (
+            <>
           <div className="grid sm:grid-cols-2 gap-2.5">
             <div className="flex flex-col gap-1">
               <label className="text-[11px] uppercase tracking-wide font-semibold text-muted">Date column</label>
@@ -140,7 +154,7 @@ export default function StatementImporter() {
 
           <div className="flex gap-2">
             <button onClick={() => setMode('signed')} className={`text-xs rounded-full px-2.5 py-1.5 ${mode === 'signed' ? 'bg-accent text-white' : 'border border-border'}`}>
-              Single signed amount column
+              One amount column (negative = out)
             </button>
             <button
               onClick={() => setMode('debitCredit')}
@@ -148,11 +162,18 @@ export default function StatementImporter() {
             >
               Separate debit/credit columns
             </button>
+            <button
+              onClick={() => setMode('amountType')}
+              className={`text-xs rounded-full px-2.5 py-1.5 ${mode === 'amountType' ? 'bg-accent text-white' : 'border border-border'}`}
+            >
+              Amount + DR/CR flag
+            </button>
           </div>
 
-          {mode === 'signed' ? (
-            <div className="flex flex-col gap-1 max-w-xs">
-              <label className="text-[11px] uppercase tracking-wide font-semibold text-muted">Amount column (negative = money out)</label>
+          {mode === 'signed' || mode === 'amountType' ? (
+            <div className="grid sm:grid-cols-2 gap-2.5 max-w-md">
+            <div className="flex flex-col gap-1">
+              <label className="text-[11px] uppercase tracking-wide font-semibold text-muted">{mode === 'signed' ? 'Amount column (negative = money out)' : 'Amount column'}</label>
               <select value={mapping.amount} onChange={(e) => setMapping({ ...mapping, amount: e.target.value })} className="input">
                 {headers.map((h) => (
                   <option key={h} value={h}>
@@ -160,6 +181,19 @@ export default function StatementImporter() {
                   </option>
                 ))}
               </select>
+            </div>
+            {mode === 'amountType' && (
+              <div className="flex flex-col gap-1">
+                <label className="text-[11px] uppercase tracking-wide font-semibold text-muted">DR/CR column</label>
+                <select value={mapping.type} onChange={(e) => setMapping({ ...mapping, type: e.target.value })} className="input">
+                  {headers.map((h) => (
+                    <option key={h} value={h}>
+                      {h}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            )}
             </div>
           ) : (
             <div className="grid sm:grid-cols-2 gap-2.5 max-w-md">
@@ -184,6 +218,9 @@ export default function StatementImporter() {
                 </select>
               </div>
             </div>
+          )}
+
+            </>
           )}
 
           <div className="overflow-x-auto border border-border rounded-lg">
@@ -214,7 +251,10 @@ export default function StatementImporter() {
           {error && <div className="text-neg text-sm">{error}</div>}
           {result && (
             <div className="text-pos text-sm">
-              Imported {result.inserted} new transactions ({result.skipped} skipped as duplicates or unparsable) out of {result.total} rows.
+              Imported {result.inserted} new transactions ({result.skipped} skipped as duplicates or unparsable) out of {result.total} rows.{' '}
+              <a href="/categorize" className="underline font-semibold">
+                Categorize them →
+              </a>
             </div>
           )}
 
@@ -227,18 +267,6 @@ export default function StatementImporter() {
           </button>
         </>
       )}
-
-      <style jsx global>{`
-        .input {
-          background: rgb(var(--bg));
-          border: 1px solid rgb(var(--border));
-          border-radius: 10px;
-          padding: 8px 9px;
-          font-size: 13px;
-          color: rgb(var(--fg));
-          width: 100%;
-        }
-      `}</style>
     </div>
   );
 }

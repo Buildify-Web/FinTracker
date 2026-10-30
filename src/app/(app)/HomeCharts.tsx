@@ -1,7 +1,7 @@
 'use client';
 
 import AppChart from '@/components/Chart';
-import { Card } from '@/components/ui';
+import ChartGroup, { ChartItem } from '@/components/ChartGroup';
 import { fmtCompactINR } from '@/lib/format';
 import { CHART_COLORS as COLORS } from '@/lib/chartColors';
 
@@ -34,9 +34,8 @@ export default function HomeCharts({
   }
 
   return (
-    <>
-      <div className="grid lg:grid-cols-2 gap-3.5">
-        <Card title="Cash trend" sub="last 6mo + 90d forecast">
+    <ChartGroup>
+      <ChartItem id="home-cash-trend" title="Cash trend" sub="last 6 months, then the next 90 days" href="/cash" wide>
           <AppChart
             type="line"
             data={{
@@ -64,30 +63,27 @@ export default function HomeCharts({
             }}
             options={{ scales: { x: { ticks: { maxTicksLimit: 8 } }, y: { ticks: { callback: (v: number) => fmtCompactINR(v) } } } }}
           />
-        </Card>
-        <Card title="Revenue vs expenses" sub="last 12mo">
+      </ChartItem>
+      <ChartItem id="home-income-spending" title="Income vs spending" sub="last 12 months" href="/pnl" wide>
           <AppChart
             type="bar"
             data={{
               labels: pnl.map((p) => p.label),
               datasets: [
-                { type: 'bar' as const, label: 'Revenue', data: pnl.map((p) => p.revenue), backgroundColor: COLORS[1] },
-                { type: 'bar' as const, label: 'Expenses', data: pnl.map((p) => p.direct + p.expense), backgroundColor: COLORS[3] },
-                { type: 'line' as const, label: 'Net profit', data: pnl.map((p) => p.profit), borderColor: COLORS[0], borderWidth: 2, pointRadius: 2 }
+                { type: 'bar' as const, label: 'Income', data: pnl.map((p) => p.revenue), backgroundColor: COLORS[1] },
+                { type: 'bar' as const, label: 'Spending', data: pnl.map((p) => p.direct + p.expense), backgroundColor: COLORS[3] },
+                { type: 'line' as const, label: 'Profit', data: pnl.map((p) => p.profit), borderColor: COLORS[0], borderWidth: 2, pointRadius: 2 }
               ]
             }}
             options={{ scales: { y: { ticks: { callback: (v: number) => fmtCompactINR(v) } } } }}
           />
-        </Card>
-      </div>
-      <div className="grid lg:grid-cols-2 gap-3.5">
-        <Card title="Where money goes" sub="this month">
-          <AppChart type="doughnut" height={190} data={donut(expenseByCat)} options={{ plugins: { legend: { position: 'right' as const } }, cutout: '62%' }} />
-        </Card>
-        <Card title="Where money comes from" sub="this month">
-          <AppChart type="doughnut" height={190} data={donut(revenueByLine)} options={{ plugins: { legend: { position: 'right' as const } }, cutout: '62%' }} />
-        </Card>
-      </div>
-    </>
+      </ChartItem>
+      <ChartItem id="home-money-goes" title="Where money goes" sub="this month" href="/payables">
+        <AppChart type="doughnut" height={190} data={donut(expenseByCat)} options={{ plugins: { legend: { position: 'right' as const } }, cutout: '62%' }} />
+      </ChartItem>
+      <ChartItem id="home-money-comes" title="Where money comes from" sub="this month" href="/receivables">
+        <AppChart type="doughnut" height={190} data={donut(revenueByLine)} options={{ plugins: { legend: { position: 'right' as const } }, cutout: '62%' }} />
+      </ChartItem>
+    </ChartGroup>
   );
 }

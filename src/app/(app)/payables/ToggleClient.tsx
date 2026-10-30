@@ -1,6 +1,7 @@
 'use client';
 
 import { useRouter } from 'next/navigation';
+import { Switch } from '@/components/ui/switch';
 
 export default function ToggleClient({ billId, inUse }: { billId: string; inUse: boolean }) {
   const router = useRouter();
@@ -8,9 +9,5 @@ export default function ToggleClient({ billId, inUse }: { billId: string; inUse:
     await fetch(`/api/bills/${billId}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'toggle_in_use' }) });
     router.refresh();
   }
-  return (
-    <button onClick={toggle} className={`w-8.5 h-5 rounded-full relative transition-colors ${inUse ? 'bg-pos' : 'bg-border'}`}>
-      <span className={`absolute top-0.5 w-4 h-4 rounded-full bg-surface transition-all ${inUse ? 'left-4' : 'left-0.5'}`} />
-    </button>
-  );
+  return <Switch checked={inUse} onCheckedChange={toggle} aria-label="Still using this?" />;
 }

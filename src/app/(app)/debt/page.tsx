@@ -27,18 +27,18 @@ export default async function DebtPage() {
     <>
       <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
         <Kpi label="Total debt" value={fmtCompactINR(totalDebt)} trendDir={totalDebt > 0 ? 'down' : 'flat'} />
-        <Kpi label="Debt lines" value={String(debts.length)} />
+        <Kpi label="Credit lines & loans" value={String(debts.length)} />
         <Kpi
           label="Monthly minimums"
           value={fmtCompactINR(debts.reduce((s, d) => s + parseFloat(d.minimum_payment), 0))}
         />
       </div>
 
-      <Card title="Add a debt line" sub="credit card, Slice, loan…">
+      <div className="flex justify-end">
         <AddDebtForm />
-      </Card>
+      </div>
 
-      {debtsWithData.length === 0 && <Card>No debt tracked yet. Add Slice or any other credit line above.</Card>}
+      {debtsWithData.length === 0 && <Card>No debt tracked yet. Add a credit card or loan to see when it will be paid off.</Card>}
 
       {debtsWithData.map(({ debt, payments, atMinimum, atFull }) => (
         <DebtCard

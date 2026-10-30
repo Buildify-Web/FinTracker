@@ -57,7 +57,7 @@ export default async function StatementDetailPage({ params }: { params: Promise<
           rows={transactions.map((t) => [
             fmtDate(t.date),
             t.note ?? '—',
-            t.category_name ?? <span className="text-muted">Uncategorised</span>,
+            t.category_name ?? <span key="u" className="text-muted">Uncategorised</span>,
             t.client_name ?? '—',
             <span key="a" className={`font-mono ${t.direction === 'in' ? 'text-pos' : 'text-neg'}`}>
               {t.direction === 'in' ? '+' : '-'}

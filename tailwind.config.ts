@@ -1,12 +1,14 @@
 import type { Config } from 'tailwindcss';
+import animate from 'tailwindcss-animate';
 
 const config: Config = {
   content: ['./src/**/*.{js,ts,jsx,tsx,mdx}'],
-  darkMode: 'media',
+  darkMode: ['selector', '[data-theme="dark"]'],
   theme: {
     extend: {
       colors: {
         bg: 'rgb(var(--bg) / <alpha-value>)',
+        sidebar: 'rgb(var(--sidebar) / <alpha-value>)',
         surface: 'rgb(var(--surface) / <alpha-value>)',
         border: 'rgb(var(--border) / <alpha-value>)',
         fg: 'rgb(var(--fg) / <alpha-value>)',
@@ -28,6 +30,6 @@ const config: Config = {
       }
     }
   },
-  plugins: []
+  plugins: [animate]
 };
 export default config;

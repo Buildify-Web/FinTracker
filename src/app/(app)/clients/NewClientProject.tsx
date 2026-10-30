@@ -2,74 +2,64 @@
 
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { Card } from '@/components/ui';
+import { Plus } from 'lucide-react';
+import { Button } from '@/components/ui/button';
+import { FormDialog, useCloseDialog } from '@/components/ui/form-dialog';
+import { Field } from '@/components/Field';
 
-export default function NewClientProject({ clients }: { clients: { id: string; name: string }[] }) {
+function Fields() {
   const router = useRouter();
-  const [tab, setTab] = useState<'client' | 'project'>('client');
-  const [client, setClient] = useState({ name: '', payment_terms_days: '30', contact_email: '' });
-  const [project, setProject] = useState({ client_id: clients[0]?.id ?? '', service_line: 'Web development', budget: '', status: 'active' });
+  const close = useCloseDialog();
+  const [form, setForm] = useState({ name: '', budget: '', status: 'active', payment_terms_days: '30', contact_email: '' });
   const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   async function submit() {
     setBusy(true);
-    if (tab === 'client') {
-      await fetch('/api/clients', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(client) });
-      setClient({ name: '', payment_terms_days: '30', contact_email: '' });
-    } else {
-      await fetch('/api/projects', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(project) });
-      setProject({ ...project, service_line: 'Web development', budget: '' });
-    }
+    setError(null);
+    const res = await fetch('/api/clients', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(form) });
     setBusy(false);
+    if (!res.ok) {
+      setError((await res.json().catch(() => ({}))).error || 'Something went wrong.');
+      return;
+    }
+    close();
     router.refresh();
   }
 
   return (
-    <Card title="Add client or project">
-      <div className="flex gap-2 mb-3">
-        {(['client', 'project'] as const).map((t) => (
-          <button key={t} onClick={() => setTab(t)} className={`text-xs font-semibold rounded-full px-2.5 py-1.5 ${tab === t ? 'bg-accent text-white' : 'border border-border'}`}>
-            {t === 'client' ? 'New client' : 'New project'}
-          </button>
-        ))}
-      </div>
-      {tab === 'client' ? (
-        <div className="grid sm:grid-cols-3 gap-2.5">
-          <input value={client.name} onChange={(e) => setClient({ ...client, name: e.target.value })} placeholder="Client name" className="input" />
-          <input type="number" value={client.payment_terms_days} onChange={(e) => setClient({ ...client, payment_terms_days: e.target.value })} placeholder="Payment terms (days)" className="input" />
-          <input value={client.contact_email} onChange={(e) => setClient({ ...client, contact_email: e.target.value })} placeholder="Contact email" className="input" />
-        </div>
-      ) : (
-        <div className="grid sm:grid-cols-4 gap-2.5">
-          <select value={project.client_id} onChange={(e) => setProject({ ...project, client_id: e.target.value })} className="input">
-            {clients.map((c) => (
-              <option key={c.id} value={c.id}>
-                {c.name}
-              </option>
-            ))}
-          </select>
-          <input value={project.service_line} onChange={(e) => setProject({ ...project, service_line: e.target.value })} placeholder="Service line" className="input" />
-          <input type="number" value={project.budget} onChange={(e) => setProject({ ...project, budget: e.target.value })} placeholder="Budget (₹)" className="input" />
-          <select value={project.status} onChange={(e) => setProject({ ...project, status: e.target.value })} className="input">
-            <option value="active">Active</option>
-            <option value="paused">Paused</option>
-            <option value="done">Done</option>
-          </select>
-        </div>
-      )}
-      <button onClick={submit} disabled={busy} className="mt-3 bg-accent text-white rounded-full px-3.5 py-2 text-sm font-semibold disabled:opacity-60">
+    <div className="grid grid-cols-2 gap-3">
+      <Field label="Name" span2>
+        <input value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} placeholder="e.g. Dynamic Donalds LMS App" className="input" autoFocus />
+      </Field>
+      <Field label="Budget (₹)">
+        <input type="number" value={form.budget} onChange={(e) => setForm({ ...form, budget: e.target.value })} className="input" />
+      </Field>
+      <Field label="Status">
+        <select value={form.status} onChange={(e) => setForm({ ...form, status: e.target.value })} className="input">
+          <option value="active">Active</option>
+          <option value="paused">Paused</option>
+          <option value="done">Done</option>
+        </select>
+      </Field>
+      <Field label="They usually pay in (days)">
+        <input type="number" value={form.payment_terms_days} onChange={(e) => setForm({ ...form, payment_terms_days: e.target.value })} className="input" />
+      </Field>
+      <Field label="Email (optional)">
+        <input value={form.contact_email} onChange={(e) => setForm({ ...form, contact_email: e.target.value })} className="input" />
+      </Field>
+      {error && <div className="col-span-2 text-neg text-sm">{error}</div>}
+      <Button onClick={submit} disabled={busy || !form.name.trim()} className="col-span-2 justify-self-end">
         {busy ? 'Saving…' : 'Save'}
-      </button>
-      <style jsx global>{`
-        .input {
-          background: rgb(var(--bg));
-          border: 1px solid rgb(var(--border));
-          border-radius: 10px;
-          padding: 8px 9px;
-          font-size: 13px;
-          color: rgb(var(--fg));
-        }
-      `}</style>
-    </Card>
+      </Button>
+    </div>
+  );
+}
+
+export default function NewClientProject() {
+  return (
+    <FormDialog variant="default" size="default" trigger={<><Plus size={15} /> Add client</>} title="Add a client">
+      <Fields />
+    </FormDialog>
   );
 }
