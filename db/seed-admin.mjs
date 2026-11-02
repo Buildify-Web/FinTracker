@@ -6,6 +6,8 @@ import bcrypt from 'bcryptjs';
 const connectionString = process.env.DATABASE_URL;
 const email = process.env.ADMIN_EMAIL;
 const password = process.env.ADMIN_PASSWORD;
+// Shown in the greeting and sidebar. Set ADMIN_NAME to change it; it is applied on every run.
+const name = process.env.ADMIN_NAME || 'Rahul';
 
 if (!connectionString) {
   console.error('DATABASE_URL is not set.');
@@ -27,9 +29,9 @@ async function main() {
   const hash = await bcrypt.hash(password, 10);
   await client.query(
     `INSERT INTO users (email, password_hash, name, role)
-     VALUES ($1, $2, 'Founder', 'owner')
-     ON CONFLICT (email) DO UPDATE SET password_hash = EXCLUDED.password_hash`,
-    [email.toLowerCase(), hash]
+     VALUES ($1, $2, $3, 'owner')
+     ON CONFLICT (email) DO UPDATE SET password_hash = EXCLUDED.password_hash, name = EXCLUDED.name`,
+    [email.toLowerCase(), hash, name]
   );
   console.log(`Admin user ready: ${email}`);
   await client.end();

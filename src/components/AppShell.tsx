@@ -19,6 +19,7 @@ const ROUTES = [
   { href: '/categorize', label: 'Categorize', icon: 'categorize' as const, hint: 'Sort imported bank transactions: mark which are invoices or bills, or give any of them a category. Nothing changes until you save.' },
   { href: '/receivables', label: 'Invoices', icon: 'receivables' as const, hint: 'Money clients owe you. Mark an invoice paid when the money arrives — it then shows up in Cash.' },
   { href: '/payables', label: 'Bills', icon: 'payables' as const, hint: 'Money you owe. Mark a bill paid when you pay it; repeating bills create the next one automatically.' },
+  { href: '/payroll', label: 'Payroll', icon: 'payroll' as const, hint: 'Your team, each person\'s monthly pay rolled into one bill, and how much of it you can afford to pay.' },
   { href: '/debt', label: 'Debt', icon: 'debt' as const, hint: 'Credit cards and loans, and how long each takes to pay off.' },
   { href: '/pnl', label: 'Profit & Loss', icon: 'pnl' as const, hint: 'Income minus costs, month by month, and how each budget is tracking.' },
   { href: '/clients', label: 'Clients', icon: 'clients' as const, hint: 'Which clients and projects actually make you money.' },
@@ -175,7 +176,7 @@ export default function AppShell({ userName, pendingCount = 0, children }: { use
             </div>
             <div className={`min-w-0 flex-1 ${lbl}`}>
               <div className="text-[13px] font-semibold truncate">{userName}</div>
-              <div className="text-[11px] text-muted">Founder</div>
+              <div className="text-[11px] text-muted">Buildify</div>
             </div>
             <button onClick={logout} aria-label="Sign out" title="Sign out" className="text-muted hover:text-fg">
               <Icon name="logout" size={16} />

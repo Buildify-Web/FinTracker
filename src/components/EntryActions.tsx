@@ -2,8 +2,9 @@
 
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { MoreHorizontal, Pencil, CheckCircle2, Trash2, Undo2 } from 'lucide-react';
+import { MoreHorizontal, Pencil, CheckCircle2, Trash2, Undo2, ListChecks } from 'lucide-react';
 import NewEntryModal, { type EntryTab } from './NewEntryModal';
+import BillDetails from './BillDetails';
 import { Button } from './ui/button';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from './ui/dialog';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from './ui/dropdown-menu';
@@ -24,7 +25,7 @@ export default function EntryActions({
   canMarkPaid?: boolean;
 }) {
   const router = useRouter();
-  const [dialog, setDialog] = useState<'edit' | 'paid' | 'delete' | null>(null);
+  const [dialog, setDialog] = useState<'edit' | 'paid' | 'delete' | 'details' | null>(null);
   const [accountId, setAccountId] = useState(accounts[0]?.id ?? '');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -56,6 +57,11 @@ export default function EntryActions({
           </Button>
         </DropdownMenuTrigger>
         <DropdownMenuContent align="end">
+          {kind === 'bill' && (
+            <DropdownMenuItem onSelect={() => setDialog('details')}>
+              <ListChecks size={15} className="text-accent" /> {paid ? 'Details' : 'Details & part payment'}
+            </DropdownMenuItem>
+          )}
           {canMarkPaid && !paid && (
             <DropdownMenuItem onSelect={() => setDialog('paid')}>
               <CheckCircle2 size={15} className="text-pos" /> Mark as paid
@@ -87,11 +93,16 @@ export default function EntryActions({
         />
       )}
 
+      {kind === 'bill' && <BillDetails bill={record as any} accounts={accounts} open={dialog === 'details'} onClose={() => setDialog(null)} />}
+
       <Dialog open={dialog === 'paid'} onOpenChange={(o) => !o && setDialog(null)}>
         <DialogContent className="max-w-sm">
           <DialogHeader>
             <DialogTitle>Mark as paid</DialogTitle>
-            <DialogDescription>{kind === 'invoice' ? 'Which account did the money arrive in?' : 'Which account did you pay from?'}</DialogDescription>
+            <DialogDescription>
+              {kind === 'invoice' ? 'Which account did the money arrive in?' : 'Which account did you pay from?'}
+              {kind === 'bill' && Number(record.paid_amount) > 0 ? ` This pays the remaining ₹${Number(record.remaining ?? 0).toLocaleString('en-IN')}.` : ''}
+            </DialogDescription>
           </DialogHeader>
           <select value={accountId} onChange={(e) => setAccountId(e.target.value)} className="input">
             {accounts.length === 0 && <option value="">Add an account on Cash first</option>}

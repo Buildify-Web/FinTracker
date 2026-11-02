@@ -1,19 +1,21 @@
 'use client';
 
 import { useEffect, useRef, useState } from 'react';
+import { ArrowLeftRight } from 'lucide-react';
 import Icon from './Icon';
 import type { EntryTab } from './NewEntryModal';
 
-type Action = { key: string; label: string; icon: 'transaction' | 'invoice' | 'bill' | 'upload'; tab?: EntryTab };
+type Action = { key: string; label: string; icon: 'transaction' | 'invoice' | 'bill' | 'upload' | 'transfer'; tab?: EntryTab };
 
 const ACTIONS: Action[] = [
   { key: 'transaction', label: 'Transaction', icon: 'transaction', tab: 'transaction' },
   { key: 'invoice', label: 'Invoice', icon: 'invoice', tab: 'invoice' },
   { key: 'bill', label: 'Bill', icon: 'bill', tab: 'bill' },
+  { key: 'transfer', label: 'Transfer', icon: 'transfer', tab: 'transfer' },
   { key: 'import', label: 'Import statement', icon: 'upload' }
 ];
 
-// One floating button; tapping it fans out four quick-add actions above it.
+// One floating button; tapping it fans out the quick-add actions above it.
 export default function QuickAdd({ onEntry, onImport }: { onEntry: (tab: EntryTab) => void; onImport: () => void }) {
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
@@ -58,7 +60,7 @@ export default function QuickAdd({ onEntry, onImport }: { onEntry: (tab: EntryTa
             {a.label}
           </span>
           <span className="w-11 h-11 rounded-full bg-surface border border-border text-accent flex items-center justify-center shadow-lg hover:border-accent/60 transition-colors">
-            <Icon name={a.icon} size={19} />
+            {a.icon === 'transfer' ? <ArrowLeftRight size={19} /> : <Icon name={a.icon} size={19} />}
           </span>
         </button>
       ))}

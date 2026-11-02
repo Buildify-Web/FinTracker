@@ -18,9 +18,9 @@ export async function GET(_req: Request, { params }: { params: Promise<{ id: str
   );
 
   const byCategory = await query(
-    `SELECT COALESCE(c.name, 'Uncategorised') AS name, SUM(t.amount) AS total, t.direction
+    `SELECT COALESCE(c.name, CASE WHEN t.transfer_id IS NOT NULL THEN 'Transfers between accounts' ELSE 'Uncategorised' END) AS name, SUM(t.amount) AS total, t.direction
      FROM transactions t LEFT JOIN categories c ON c.id = t.category_id
-     WHERE t.statement_id = $1 GROUP BY c.name, t.direction ORDER BY total DESC`,
+     WHERE t.statement_id = $1 GROUP BY c.name, t.direction, (t.transfer_id IS NOT NULL) ORDER BY total DESC`,
     [id]
   );
 

@@ -44,11 +44,12 @@ export async function POST(req: NextRequest) {
         await client.query('UPDATE transactions SET client_id = $2, project_id = $3 WHERE id = $1', [tx.id, clientId, it.project_id || null]);
         invoices++;
       } else if (it.kind === 'bill' && tx.direction === 'out') {
-        await client.query(
-          `INSERT INTO bills (vendor, category_id, amount, due_date, status, paid_transaction_id)
-           VALUES ($1, $2, $3, $4, 'paid', $5)`,
+        const madeBill = await client.query(
+          `INSERT INTO bills (vendor, category_id, amount, due_date, status, paid_transaction_id, paid_amount)
+           VALUES ($1, $2, $3, $4, 'paid', $5, $3) RETURNING id`,
           [party || tx.note || 'Unknown vendor', it.category_id || null, tx.amount, tx.date, tx.id]
         );
+        await client.query('INSERT INTO bill_payments (bill_id, transaction_id, amount, paid_date) VALUES ($1, $2, $3, $4)', [madeBill.rows[0].id, tx.id, tx.amount, tx.date]);
         if (it.category_id) await client.query('UPDATE transactions SET category_id = $2 WHERE id = $1', [tx.id, it.category_id]);
         bills++;
       }

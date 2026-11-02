@@ -22,13 +22,16 @@ export function Card({ title, sub, action, href, children }: { title?: string; s
   );
 }
 
-export function Kpi({ label, value, trend, trendDir, href }: { label: string; value: string; trend?: string; trendDir?: 'up' | 'down' | 'flat'; href?: string }) {
+export function Kpi({ label, value, trend, trendDir, href, tone }: { label: string; value: string; trend?: string; trendDir?: 'up' | 'down' | 'flat'; href?: string; tone?: 'pos' | 'neg' }) {
   const color = trendDir === 'up' ? 'text-pos' : trendDir === 'down' ? 'text-neg' : 'text-muted';
   const arrow = trendDir === 'up' ? '▲' : trendDir === 'down' ? '▼' : '—';
+  // tone tints the whole tile green (good) or red (needs attention); without it the tile stays neutral.
+  const skin = tone === 'pos' ? 'bg-pos/10 border-pos/30 hover:border-pos/60' : tone === 'neg' ? 'bg-neg/10 border-neg/30 hover:border-neg/60' : 'bg-surface border-border hover:border-accent/60';
+  const valueColor = tone === 'pos' ? 'text-pos' : tone === 'neg' ? 'text-neg' : '';
   const body = (
     <>
       <div className="text-[11px] uppercase tracking-wide font-semibold text-muted">{label}</div>
-      <div className="font-mono text-lg font-semibold mt-1 tabular">{value}</div>
+      <div className={`font-mono text-lg font-semibold mt-1 tabular ${valueColor}`}>{value}</div>
       {trend && (
         <div className={`text-[11px] font-semibold mt-0.5 ${color}`}>
           {arrow} {trend}
@@ -36,10 +39,10 @@ export function Kpi({ label, value, trend, trendDir, href }: { label: string; va
       )}
     </>
   );
-  const box = 'block bg-surface border border-border rounded-2xl px-4 py-3.5 min-w-0';
+  const box = `block border rounded-2xl px-4 py-3.5 min-w-0 ${skin}`;
   if (!href) return <div className={box}>{body}</div>;
   return (
-    <Link href={href} className={`${box} transition-all hover:border-accent/60 hover:-translate-y-0.5`}>
+    <Link href={href} className={`${box} transition-all hover:-translate-y-0.5`}>
       {body}
     </Link>
   );

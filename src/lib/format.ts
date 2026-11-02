@@ -41,3 +41,13 @@ export function monthLabel(d: string | Date): string {
   const { y, m } = parts(d);
   return `${MONTHS[m]} ${String(y).slice(2)}`;
 }
+
+// Rupees with paise, for invoices where ₹17,499.50 must not round to ₹17,500.
+export function fmtMoney(n: number | string): string {
+  const num = typeof n === 'string' ? parseFloat(n) : n;
+  const [whole, frac] = Math.abs(num).toFixed(2).split('.');
+  const last3 = whole.length > 3 ? whole.slice(-3) : whole;
+  const rest = whole.length > 3 ? whole.slice(0, -3) : '';
+  const grouped = rest.replace(/\B(?=(\d{2})+(?!\d))/g, ',');
+  return `${num < 0 ? '-' : ''}₹${grouped ? grouped + ',' : ''}${last3}.${frac}`;
+}

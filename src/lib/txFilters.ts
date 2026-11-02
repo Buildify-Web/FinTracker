@@ -35,11 +35,12 @@ export function txWhere(f: TxFilters): { sql: string; params: unknown[] } {
   if (f.q) add(`(t.note ILIKE ? OR cl.name ILIKE ?)`, `%${f.q.replace(/[%_\\]/g, '\\$&')}%`);
   if (f.dir) add('t.direction = ?', f.dir);
   if (UUID.test(f.account)) add('t.account_id = ?', f.account);
-  if (f.category === 'none') conds.push('t.category_id IS NULL');
+  if (f.category === 'transfer') conds.push('t.transfer_id IS NOT NULL');
+  else if (f.category === 'none') conds.push('t.category_id IS NULL AND t.transfer_id IS NULL');
   else if (UUID.test(f.category)) add('t.category_id = ?', f.category);
   if (f.from) add('t.date >= ?', f.from);
   if (f.to) add('t.date <= ?', f.to);
   return { sql: conds.length ? `WHERE ${conds.join(' AND ')}` : '', params };
 }
 
-export const TX_FROM = `FROM transactions t LEFT JOIN accounts a ON a.id = t.account_id LEFT JOIN categories c ON c.id = t.category_id LEFT JOIN clients cl ON cl.id = t.client_id`;
+export const TX_FROM = `FROM transactions t LEFT JOIN accounts a ON a.id = t.account_id LEFT JOIN categories c ON c.id = t.category_id LEFT JOIN clients cl ON cl.id = t.client_id LEFT JOIN transfers tr ON tr.id = t.transfer_id`;

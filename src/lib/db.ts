@@ -1,4 +1,4 @@
-import { Pool, types, type QueryResultRow } from 'pg';
+import { Pool, types, type PoolClient, type QueryResultRow } from 'pg';
 import { revalidateTag } from 'next/cache';
 
 // node-postgres parses `date`/`timestamp` columns into JS Date objects by
@@ -65,3 +65,20 @@ export async function queryOne<T extends QueryResultRow = QueryResultRow>(text: 
 }
 
 export { pool };
+
+// Runs several statements as one all-or-nothing unit. Throw to roll back.
+export async function withTransaction<T>(fn: (client: PoolClient) => Promise<T>): Promise<T> {
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    const out = await fn(client);
+    await client.query('COMMIT');
+    invalidateFinanceCache();
+    return out;
+  } catch (e) {
+    await client.query('ROLLBACK').catch(() => {});
+    throw e;
+  } finally {
+    client.release();
+  }
+}

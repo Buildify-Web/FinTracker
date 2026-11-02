@@ -7,9 +7,18 @@ function cached<A extends unknown[], R>(fn: (...args: A) => Promise<R>, key: str
   return unstable_cache(fn, [key], { tags: ['finance'], revalidate: 60 });
 }
 
-export type Account = { id: string; name: string; type: string; opening_balance: string };
+export type Account = { id: string; name: string; type: string; opening_balance: string; archived: boolean };
 export type Category = { id: string; name: string; type: 'income' | 'direct' | 'expense'; color: string; monthly_budget: string | null };
-export type Client = { id: string; name: string; payment_terms_days: number; contact_email: string | null };
+export type Client = {
+  id: string;
+  name: string;
+  payment_terms_days: number;
+  contact_email: string | null;
+  contact_name: string | null;
+  contact_phone: string | null;
+  billing_address: string | null;
+  gstin: string | null;
+};
 export type Project = {
   id: string;
   client_id: string | null;
@@ -19,10 +28,27 @@ export type Project = {
   status: string;
   start_date: string | null;
   end_date: string | null;
+  description: string | null;
+  /** Already received before this app existed (not in the books); only reduces what is left to invoice. */
+  prior_paid: string;
 };
 
+// Accounts you can use right now (pickers, imports). Archived ones keep their history and balance but are hidden here.
 export async function getAccounts() {
-  return query<Account>('SELECT * FROM accounts ORDER BY created_at');
+  return query<Account>('SELECT * FROM accounts WHERE NOT archived ORDER BY created_at');
+}
+
+// Every account, archived or not, with its current balance and entry count. For the Cash page and anything that must add up to total cash.
+export type AccountWithBalance = Account & { balance: string; tx_count: string; last_tx: string | null; transfer_count: string };
+export async function getAccountsWithBalances() {
+  return query<AccountWithBalance>(
+    `SELECT a.*,
+       a.opening_balance + COALESCE((SELECT SUM(CASE WHEN t.direction = 'in' THEN t.amount ELSE -t.amount END) FROM transactions t WHERE t.account_id = a.id), 0) AS balance,
+       (SELECT COUNT(*) FROM transactions t WHERE t.account_id = a.id) AS tx_count,
+       (SELECT MAX(t.date) FROM transactions t WHERE t.account_id = a.id) AS last_tx,
+       (SELECT COUNT(*) FROM transfers tr WHERE tr.from_account_id = a.id OR tr.to_account_id = a.id) AS transfer_count
+     FROM accounts a ORDER BY a.archived, a.created_at`
+  );
 }
 
 export async function getCategories() {
@@ -71,8 +97,8 @@ export async function getTotalCash(asOf?: string): Promise<number> {
 
 async function getAccountBalancesByMonthUncached(months = 6) {
   // One balance-as-of-month-end per account, for the stacked chart (single query).
-  const [accounts, rows] = await Promise.all([
-    getAccounts(),
+  const [allAccounts, rows] = await Promise.all([
+    query<Account>('SELECT * FROM accounts ORDER BY created_at'),
     query<{ month_end: string; label: string; account_id: string; balance: string }>(
       `WITH m AS (
          SELECT (date_trunc('month', d) + interval '1 month - 1 day')::date AS month_end,
@@ -94,7 +120,10 @@ async function getAccountBalancesByMonthUncached(months = 6) {
     if (!entry) byMonth.set(r.month_end, (entry = { label: r.label, balances: {} }));
     entry.balances[r.account_id] = parseFloat(r.balance);
   }
-  return { accounts, series: [...byMonth.values()] };
+  const series = [...byMonth.values()];
+  // An archived account only appears if it still held money in one of these months, so the stack always adds up to total cash.
+  const accounts = allAccounts.filter((a) => !a.archived || series.some((m) => Math.abs(m.balances[a.id] ?? 0) > 0.004));
+  return { accounts, series };
 }
 export const getAccountBalancesByMonth = cached(getAccountBalancesByMonthUncached, 'getAccountBalancesByMonth');
 
@@ -123,7 +152,7 @@ export async function getNetBurnLast3Months(): Promise<number> {
        SELECT date_trunc('month', date) AS m,
          SUM(CASE WHEN direction = 'out' THEN amount ELSE -amount END) AS monthly
        FROM transactions
-       WHERE date >= date_trunc('month', now()) - interval '3 months'
+       WHERE date >= date_trunc('month', now()) - interval '3 months' AND transfer_id IS NULL
        GROUP BY m
      ) x`
   );
@@ -166,7 +195,7 @@ async function getMonthlyPnlUncached(months = 12): Promise<MonthlyPnl[]> {
        COALESCE(SUM(CASE WHEN t.direction = 'out' AND c.type = 'direct' THEN t.amount ELSE 0 END), 0) AS direct,
        COALESCE(SUM(CASE WHEN t.direction = 'out' AND (c.type = 'expense' OR c.type IS NULL) THEN t.amount ELSE 0 END), 0) AS expense
      FROM months
-     LEFT JOIN transactions t ON date_trunc('month', t.date) = months.m
+     LEFT JOIN transactions t ON date_trunc('month', t.date) = months.m AND t.transfer_id IS NULL
      LEFT JOIN categories c ON c.id = t.category_id
      GROUP BY months.m
      ORDER BY months.m`
@@ -195,7 +224,7 @@ export async function getExpenseByCategory(monthStart: string) {
   return query<{ name: string; total: string }>(
     `SELECT COALESCE(c.name, 'Other') AS name, SUM(t.amount) AS total
      FROM transactions t LEFT JOIN categories c ON c.id = t.category_id
-     WHERE t.direction = 'out' AND date_trunc('month', t.date) = date_trunc('month', $1::date)
+     WHERE t.direction = 'out' AND t.transfer_id IS NULL AND date_trunc('month', t.date) = date_trunc('month', $1::date)
      GROUP BY c.name ORDER BY total DESC`,
     [monthStart]
   );
@@ -208,6 +237,71 @@ export async function getRevenueByServiceLine(monthStart: string) {
      WHERE iv.status = 'paid' AND date_trunc('month', iv.paid_date) = date_trunc('month', $1::date)
      GROUP BY p.service_line ORDER BY total DESC`,
     [monthStart]
+  );
+}
+
+// ---------- Dashboard: the same four views over any date range ----------
+// `from` / `to` are inclusive YYYY-MM-DD days (see dashboardRange.ts).
+
+export async function getCashSeriesBetween(from: string, to: string) {
+  const rows = await query<{ date: string; cash: string }>(
+    `WITH net AS (
+       SELECT date, SUM(CASE WHEN direction = 'in' THEN amount WHEN direction = 'out' THEN -amount ELSE 0 END) AS amt
+       FROM transactions GROUP BY date
+     ), base AS (SELECT COALESCE(SUM(opening_balance), 0) AS opening FROM accounts)
+     SELECT to_char(d, 'YYYY-MM-DD') AS date,
+            base.opening + COALESCE((SELECT SUM(amt) FROM net WHERE net.date <= d), 0) AS cash
+     FROM base, generate_series($1::date, $2::date, interval '1 day') AS d
+     ORDER BY d`,
+    [from, to]
+  );
+  return rows.map((r) => ({ date: r.date, cash: parseFloat(r.cash) }));
+}
+
+// Income and spending per week or month inside the range (same income / direct / expense split as the P&L).
+export async function getPnlBetween(from: string, to: string, unit: 'week' | 'month'): Promise<MonthlyPnl[]> {
+  const rows = await query<{ month: string; label: string; revenue: string; direct: string; expense: string }>(
+    `WITH b AS (
+       SELECT generate_series(date_trunc($3, $1::date), date_trunc($3, $2::date), ('1 ' || $3)::interval) AS s
+     )
+     SELECT to_char(b.s, 'YYYY-MM-DD') AS month,
+       to_char(GREATEST(b.s, $1::date), CASE WHEN $3 = 'week' THEN 'DD Mon' ELSE 'Mon YY' END) AS label,
+       COALESCE(SUM(CASE WHEN t.direction = 'in' THEN t.amount ELSE 0 END), 0) AS revenue,
+       COALESCE(SUM(CASE WHEN t.direction = 'out' AND c.type = 'direct' THEN t.amount ELSE 0 END), 0) AS direct,
+       COALESCE(SUM(CASE WHEN t.direction = 'out' AND (c.type = 'expense' OR c.type IS NULL) THEN t.amount ELSE 0 END), 0) AS expense
+     FROM b
+     LEFT JOIN transactions t ON t.date BETWEEN $1::date AND $2::date AND date_trunc($3, t.date) = b.s AND t.transfer_id IS NULL
+     LEFT JOIN categories c ON c.id = t.category_id
+     GROUP BY b.s
+     ORDER BY b.s`,
+    [from, to, unit]
+  );
+  return rows.map((r) => {
+    const revenue = parseFloat(r.revenue);
+    const direct = parseFloat(r.direct);
+    const expense = parseFloat(r.expense);
+    const profit = revenue - direct - expense;
+    return { month: r.month, label: r.label, revenue, direct, expense, profit, gross_margin: revenue ? ((revenue - direct) / revenue) * 100 : 0, net_margin: revenue ? (profit / revenue) * 100 : 0 };
+  });
+}
+
+export async function getExpenseByCategoryBetween(from: string, to: string) {
+  return query<{ name: string; total: string }>(
+    `SELECT COALESCE(c.name, 'Other') AS name, SUM(t.amount) AS total
+     FROM transactions t LEFT JOIN categories c ON c.id = t.category_id
+     WHERE t.direction = 'out' AND t.transfer_id IS NULL AND t.date BETWEEN $1::date AND $2::date
+     GROUP BY c.name ORDER BY total DESC`,
+    [from, to]
+  );
+}
+
+export async function getRevenueByServiceLineBetween(from: string, to: string) {
+  return query<{ name: string; total: string }>(
+    `SELECT COALESCE(p.service_line, 'Other') AS name, SUM(iv.amount) AS total
+     FROM invoices iv LEFT JOIN projects p ON p.id = iv.project_id
+     WHERE iv.status = 'paid' AND iv.paid_date BETWEEN $1::date AND $2::date
+     GROUP BY p.service_line ORDER BY total DESC`,
+    [from, to]
   );
 }
 
@@ -277,7 +371,7 @@ export async function getAvgDaysToPayByClient(): Promise<Map<string, number>> {
 export async function getDSO(): Promise<number> {
   const rec = await queryOne<{ total: string }>(`SELECT COALESCE(SUM(amount), 0) AS total FROM invoices WHERE status != 'paid'`);
   const rev = await queryOne<{ total: string }>(
-    `SELECT COALESCE(SUM(amount), 0) AS total FROM transactions WHERE direction = 'in' AND date >= current_date - interval '90 days'`
+    `SELECT COALESCE(SUM(amount), 0) AS total FROM transactions WHERE direction = 'in' AND transfer_id IS NULL AND date >= current_date - interval '90 days'`
   );
   const avgDaily = rev ? parseFloat(rev.total) / 90 : 0;
   return avgDaily ? parseFloat(rec!.total) / avgDaily : 0;
@@ -296,12 +390,24 @@ export type Bill = {
   frequency: string | null;
   status: string;
   in_use: boolean;
+  paid_amount: string;
+  /** What is still owed: amount minus everything paid so far. */
+  remaining: string;
+  /** Payroll breakdown, one line per person, when the bill came from the Payroll page. */
+  items: { key: string; name: string; role: string | null; amount: number }[] | null;
+  payroll_month: string | null;
+  client_id: string | null;
+  project_id: string | null;
+  client_name: string | null;
+  payments: { id: string; amount: number; paid_date: string; item_key: string | null; label: string | null }[];
 };
 
 export async function getBills(openOnly = false) {
   return query<Bill>(
-    `SELECT b.*, c.name AS category_name
-     FROM bills b LEFT JOIN categories c ON c.id = b.category_id
+    `SELECT b.*, c.name AS category_name, cl.name AS client_name, (b.amount - b.paid_amount) AS remaining,
+       COALESCE((SELECT json_agg(json_build_object('id', p.id, 'amount', p.amount, 'paid_date', p.paid_date, 'item_key', p.item_key, 'label', p.label) ORDER BY p.created_at)
+                 FROM bill_payments p WHERE p.bill_id = b.id), '[]'::json) AS payments
+     FROM bills b LEFT JOIN categories c ON c.id = b.category_id LEFT JOIN clients cl ON cl.id = b.client_id
      ${openOnly ? "WHERE b.status != 'paid'" : ''}
      ORDER BY b.due_date`
   );
@@ -415,6 +521,22 @@ export async function getDebtPayments(debtId: string) {
   );
 }
 
+export type DebtDue = { id: string; name: string; kind: string; due_date: string; amount: string; balance: string; overdue: boolean; total: string };
+
+// Debts with a repayment overdue or coming up in the next 30 days. The amount is the plan's monthly
+// payment (else the minimum), never more than what is still owed.
+export async function getDebtsDue() {
+  return query<DebtDue>(
+    `SELECT id, name, kind, due_date, current_balance AS balance,
+            LEAST(current_balance, COALESCE(NULLIF(monthly_payment, 0), NULLIF(minimum_payment, 0), current_balance)) AS amount,
+            due_date < current_date AS overdue,
+            SUM(LEAST(current_balance, COALESCE(NULLIF(monthly_payment, 0), NULLIF(minimum_payment, 0), current_balance))) OVER () AS total
+     FROM debts
+     WHERE current_balance > 0 AND due_date IS NOT NULL AND due_date <= current_date + 30
+     ORDER BY due_date, name`
+  );
+}
+
 export async function getTotalDebt(): Promise<number> {
   const row = await queryOne<{ total: string }>('SELECT COALESCE(SUM(current_balance), 0) AS total FROM debts');
   return row ? parseFloat(row.total) : 0;
@@ -488,6 +610,112 @@ export async function getTeam() {
      LEFT JOIN clients cl ON cl.id = p.client_id
      ORDER BY tc.start_date NULLS FIRST, tc.person_name`
   );
+}
+
+// ---------- Payroll ----------
+
+export type PayrollRow = {
+  id: string;
+  person_name: string;
+  role: string | null;
+  monthly_cost: string;
+  payable: string;
+  active_days: number;
+  days_in_month: number;
+  /** The whole roster's payable, summed in SQL (same value on every row). */
+  total: string;
+};
+
+// Everyone on the team who works at all during `ym` (YYYY-MM), with their cost
+// prorated by the days they're on the team that month (joiners and leavers).
+export async function getPayrollRoster(ym: string) {
+  return query<PayrollRow>(
+    `WITH m AS (
+       SELECT ($1 || '-01')::date AS ms, (date_trunc('month', ($1 || '-01')::date) + interval '1 month - 1 day')::date AS me
+     ), x AS (
+       SELECT tc.id, tc.person_name, tc.role, tc.monthly_cost, tc.created_at,
+         GREATEST(0, LEAST(COALESCE(tc.end_date, m.me), m.me) - GREATEST(COALESCE(tc.start_date, m.ms), m.ms) + 1) AS active_days,
+         (m.me - m.ms + 1) AS days_in_month
+       FROM team_costs tc, m
+     )
+     SELECT id, person_name, role, monthly_cost, active_days, days_in_month,
+            ROUND(monthly_cost * active_days / days_in_month, 2) AS payable,
+            SUM(ROUND(monthly_cost * active_days / days_in_month, 2)) OVER () AS total
+     FROM x WHERE active_days > 0
+     ORDER BY monthly_cost DESC, person_name`,
+    [ym]
+  );
+}
+
+export type PayrollBaseline = {
+  cash: number;
+  collections: number;
+  otherExpenses: number;
+  debtMinimums: number;
+  cashFloorMonths: number;
+};
+
+// The numbers the affordability planner starts from; the page lets the user change each one.
+//  - otherExpenses: what leaves the bank in a typical month apart from salaries and debt repayments
+//  - collections: open invoices (including overdue) due by the end of the month
+export async function getPayrollBaseline(ym: string): Promise<PayrollBaseline> {
+  const [cash, row] = await Promise.all([
+    getTotalCash(),
+    queryOne<{ other: string; collections: string; debt: string; floor: string | null }>(
+      `SELECT
+         (SELECT COALESCE(AVG(monthly), 0) FROM (
+            SELECT SUM(t.amount) AS monthly
+            FROM transactions t LEFT JOIN categories c ON c.id = t.category_id
+            WHERE t.direction = 'out' AND t.transfer_id IS NULL
+              AND t.date >= date_trunc('month', now()) - interval '3 months' AND t.date < date_trunc('month', now())
+              AND COALESCE(c.name, '') <> 'Debt Repayment'
+              AND COALESCE(c.name, '') NOT ILIKE '%salar%'
+              AND NOT EXISTS (SELECT 1 FROM team_costs tc WHERE tc.category_id = t.category_id)
+            GROUP BY date_trunc('month', t.date)
+          ) x) AS other,
+         (SELECT COALESCE(SUM(amount), 0) FROM invoices
+           WHERE status IN ('due','overdue') AND due_date <= (date_trunc('month', ($1 || '-01')::date) + interval '1 month - 1 day')::date) AS collections,
+         (SELECT COALESCE(SUM(minimum_payment), 0) FROM debts WHERE current_balance > 0) AS debt,
+         (SELECT value #>> '{}' FROM settings WHERE key = 'cash_floor_months') AS floor`,
+      [ym]
+    )
+  ]);
+  return {
+    cash,
+    collections: parseFloat(row?.collections ?? '0'),
+    otherExpenses: parseFloat(row?.other ?? '0'),
+    debtMinimums: parseFloat(row?.debt ?? '0'),
+    cashFloorMonths: Number(row?.floor ?? 2) || 0
+  };
+}
+
+export type PayrollBill = { id: string; vendor: string; amount: string; due_date: string; status: string; paid_amount: string; items: { key: string; name: string; role: string | null; amount: number }[] | null };
+
+export function payrollVendor(ym: string) {
+  return `Payroll — ${monthLabelOf(ym)}`;
+}
+function monthLabelOf(ym: string) {
+  const names = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+  return `${names[parseInt(ym.slice(5, 7), 10) - 1]} ${ym.slice(0, 4)}`;
+}
+
+// The consolidated bill already pushed to Bills for this month, if any.
+export async function getPayrollBill(ym: string) {
+  return queryOne<PayrollBill>('SELECT id, vendor, amount, due_date, status, paid_amount, items FROM bills WHERE payroll_month = $1 OR vendor = $2 ORDER BY due_date DESC LIMIT 1', [ym, payrollVendor(ym)]);
+}
+
+// The per-person amounts last sent to Bills for this month (person id -> amount), or null if none were.
+export async function getSavedPayrollPlan(ym: string): Promise<Record<string, number> | null> {
+  const row = await queryOne<{ amounts: Record<string, number> }>('SELECT amounts FROM payroll_plans WHERE month = $1', [ym]);
+  return row?.amounts ?? null;
+}
+
+// How much of each project has been invoiced so far (voided invoices don't count), for part-payment invoices.
+export async function getProjectBilled(): Promise<Record<string, number>> {
+  const rows = await query<{ project_id: string; billed: string }>(
+    `SELECT project_id, SUM(amount + advance_paid) AS billed FROM invoices WHERE project_id IS NOT NULL AND status != 'void' GROUP BY project_id`
+  );
+  return Object.fromEntries(rows.map((r) => [r.project_id, parseFloat(r.billed)]));
 }
 
 // ---------- Alerts (Section 6) ----------

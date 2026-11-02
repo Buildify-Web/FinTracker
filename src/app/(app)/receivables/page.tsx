@@ -2,6 +2,9 @@ import { getInvoices, getAgingBuckets, getOutstandingByClient, getAvgDaysToPayBy
 import { Card, Table, Chip } from '@/components/ui';
 import { fmtINR, fmtDate } from '@/lib/format';
 import ReceivablesChart from './ReceivablesChart';
+import Link from 'next/link';
+import { Plus } from 'lucide-react';
+import { Button } from '@/components/ui/button';
 import EntryActions from '@/components/EntryActions';
 
 export const dynamic = 'force-dynamic';
@@ -24,13 +27,25 @@ export default async function ReceivablesPage() {
 
   return (
     <>
-      <Card title="Invoices" sub={`${unpaid.length} unpaid · ${fmtINR(owed)} owed${late.length ? ` · ${late.length} late` : ''}`}>
+      <Card
+        title="Invoices"
+        sub={`${unpaid.length} unpaid · ${fmtINR(owed)} owed${late.length ? ` · ${late.length} late` : ''}`}
+        action={
+          <Button asChild size="sm">
+            <Link href="/receivables/new">
+              <Plus size={14} /> Create invoice
+            </Link>
+          </Button>
+        }
+      >
         <Table
           limit={10}
-          empty="No invoices yet. Use the + button to add one."
+          empty="No invoices yet. Use Create invoice to make one you can share."
           head={['Invoice', 'Client', 'Due', 'Status', 'Amount', '']}
           rows={withAvg.map((iv) => [
-            iv.number,
+            <Link key="n" href={`/receivables/${iv.id}`} className="font-semibold text-accent hover:underline">
+              {iv.number}
+            </Link>,
             <span key="c">
               {iv.client_name ?? '—'}
               {iv.avgDays != null && <span className="block text-[11px] text-muted">usually pays in {iv.avgDays} days</span>}

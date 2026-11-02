@@ -23,13 +23,13 @@ const plusDays = (n: number) => {
   return d.toISOString().slice(0, 10);
 };
 
-export type EntryTab = 'transaction' | 'invoice' | 'bill';
+export type EntryTab = 'transaction' | 'invoice' | 'bill' | 'transfer';
 
 // An existing record to edit (as returned by the list queries). Dates/amounts arrive as strings.
 export type EditTarget = { kind: EntryTab; record: Record<string, any> };
 
-const API: Record<EntryTab, string> = { transaction: '/api/transactions', invoice: '/api/invoices', bill: '/api/bills' };
-const NOUN: Record<EntryTab, string> = { transaction: 'transaction', invoice: 'invoice', bill: 'bill' };
+const API: Record<EntryTab, string> = { transaction: '/api/transactions', invoice: '/api/invoices', bill: '/api/bills', transfer: '/api/transfers' };
+const NOUN: Record<EntryTab, string> = { transaction: 'transaction', invoice: 'invoice', bill: 'bill', transfer: 'transfer' };
 
 const str = (v: unknown) => (v == null ? '' : String(v));
 
@@ -37,12 +37,15 @@ export default function NewEntryModal({
   onClose,
   onSaved,
   initialTab = 'transaction',
-  editing
+  editing,
+  defaults
 }: {
   onClose: () => void;
   onSaved: () => void;
   initialTab?: EntryTab;
   editing?: EditTarget;
+  /** Pre-picks the client on a new bill, e.g. from a client's card. */
+  defaults?: { client_id?: string; project_id?: string };
 }) {
   const [tab, setTab] = useState<EntryTab>(editing?.kind ?? initialTab);
   const r = editing?.record ?? {};
@@ -76,7 +79,10 @@ export default function NewEntryModal({
     issue_date: isInv ? str(r.issue_date) : today(),
     due_date: isInv ? str(r.due_date) : plusDays(30)
   });
+  const [tr, setTr] = useState({ from_account_id: '', to_account_id: '', amount: '', date: today(), note: '' });
   const [bill, setBill] = useState({
+    client_id: isBill ? str(r.client_id) : defaults?.client_id ?? '',
+    project_id: isBill ? str(r.project_id) : defaults?.project_id ?? '',
     vendor: isBill ? str(r.vendor) : '',
     category_id: isBill ? str(r.category_id) : '',
     amount: isBill ? str(r.amount) : '',
@@ -88,13 +94,13 @@ export default function NewEntryModal({
   async function submit() {
     setSaving(true);
     setError(null);
-    const body = tab === 'transaction' ? tx : tab === 'invoice' ? inv : bill;
+    const body = tab === 'transaction' ? tx : tab === 'invoice' ? inv : tab === 'transfer' ? tr : bill;
     const res = editing
       ? await fetch(`${API[tab]}/${r.id}`, {
           method: 'PATCH',
           headers: { 'Content-Type': 'application/json' },
           // Invoice and bill routes multiplex actions on PATCH; transactions take the fields directly.
-          body: JSON.stringify(tab === 'transaction' ? body : { action: 'update', ...body })
+          body: JSON.stringify(tab === 'transaction' || tab === 'transfer' ? body : { action: 'update', ...body })
         })
       : await fetch(API[tab], { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
     setSaving(false);
@@ -142,7 +148,7 @@ export default function NewEntryModal({
         {!editing && (
           <Tabs value={tab} onValueChange={(v) => setTab(v as EntryTab)}>
             <TabsList className="w-full">
-              {(['transaction', 'invoice', 'bill'] as const).map((t) => (
+              {(['transaction', 'invoice', 'bill', 'transfer'] as const).map((t) => (
                 <TabsTrigger key={t} value={t} className="flex-1">
                   {t[0].toUpperCase() + t.slice(1)}
                 </TabsTrigger>
@@ -198,13 +204,9 @@ export default function NewEntryModal({
         {tab === 'invoice' && (
           <div className="grid grid-cols-2 gap-3">
             <Field label="Client">
-              <select value={inv.client_id} onChange={(e) => setInv({ ...inv, client_id: e.target.value, project_id: ref.projects.find((p) => p.client_id === e.target.value)?.id ?? '' })} className="input">
+              <select value={inv.project_id} onChange={(e) => setInv({ ...inv, project_id: e.target.value, client_id: ref.projects.find((p) => p.id === e.target.value)?.client_id ?? '' })} className="input">
                 <option value="">Choose…</option>
-                {ref.clients.map((c) => (
-                  <option key={c.id} value={c.id}>
-                    {c.name}
-                  </option>
-                ))}
+                {projectOptions}
               </select>
             </Field>
             <Field label="Amount (₹)">
@@ -232,6 +234,17 @@ export default function NewEntryModal({
             <Field label="Due on">
               <input type="date" value={bill.due_date} onChange={(e) => setBill({ ...bill, due_date: e.target.value })} className="input" />
             </Field>
+            <Field label="For a client? (optional)" span2>
+              <select
+                value={bill.project_id}
+                onChange={(e) => setBill({ ...bill, project_id: e.target.value, client_id: ref.projects.find((p) => p.id === e.target.value)?.client_id ?? '' })}
+                className="input"
+              >
+                <option value="">No, it's for the business</option>
+                {projectOptions}
+              </select>
+            </Field>
+            {bill.project_id && <p className="col-span-2 -mt-1 text-[11.5px] text-muted">The cost counts against this client&apos;s margin once you pay it. Pick a &quot;direct&quot; category, like client hosting, so it is counted as a project cost.</p>}
             <More>
               <Field label="Category">
                 <select value={bill.category_id} onChange={(e) => setBill({ ...bill, category_id: e.target.value })} className="input">
@@ -251,6 +264,47 @@ export default function NewEntryModal({
                 </select>
               </Field>
             </More>
+          </div>
+        )}
+
+        {tab === 'transfer' && (
+          <div className="grid grid-cols-2 gap-3">
+            {ref.accounts.length < 2 ? (
+              <div className="col-span-2 rounded-xl border border-warn/40 bg-warn/10 px-4 py-3 text-[13px]">You need at least two active accounts to move money between them. Add another one on the Cash page first.</div>
+            ) : (
+              <>
+                <Field label="From" span2>
+                  <select value={tr.from_account_id} onChange={(e) => setTr({ ...tr, from_account_id: e.target.value })} className="input" autoFocus>
+                    <option value="">Choose…</option>
+                    {ref.accounts.map((a) => (
+                      <option key={a.id} value={a.id}>
+                        {a.name.trim()}
+                      </option>
+                    ))}
+                  </select>
+                </Field>
+                <Field label="To" span2>
+                  <select value={tr.to_account_id} onChange={(e) => setTr({ ...tr, to_account_id: e.target.value })} className="input">
+                    <option value="">Choose…</option>
+                    {ref.accounts.filter((a) => a.id !== tr.from_account_id).map((a) => (
+                      <option key={a.id} value={a.id}>
+                        {a.name.trim()}
+                      </option>
+                    ))}
+                  </select>
+                </Field>
+                <Field label="Amount (₹)">
+                  <input type="number" min={0} step="0.01" value={tr.amount} onChange={(e) => setTr({ ...tr, amount: e.target.value })} className="input font-mono" placeholder="10000" />
+                </Field>
+                <Field label="Date">
+                  <input type="date" value={tr.date} onChange={(e) => setTr({ ...tr, date: e.target.value })} className="input" />
+                </Field>
+                <Field label="Note (optional)" span2>
+                  <input type="text" value={tr.note} onChange={(e) => setTr({ ...tr, note: e.target.value })} maxLength={200} className="input" placeholder="e.g. Move savings" />
+                </Field>
+                <p className="col-span-2 text-[11.5px] text-muted">Total cash stays the same, and this is not counted as income or spending.</p>
+              </>
+            )}
           </div>
         )}
 

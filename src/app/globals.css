@@ -139,3 +139,14 @@ select option { background: rgb(var(--bg)); color: rgb(var(--fg)); }
 .input:disabled { opacity: 0.5; cursor: not-allowed; }
 select.input { padding-right: 0.5rem; }
 select.input option { background: rgb(var(--surface)); color: rgb(var(--fg)); }
+
+/* Invoice sheet: always a white page, and the only thing that prints on /i/<token>. */
+.invoice-sheet { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+@media print {
+  @page { size: A4; margin: 10mm; }
+  html, body { background: #fff !important; }
+  .no-print { display: none !important; }
+  .print-bare { padding: 0 !important; background: #fff !important; }
+  .invoice-sheet { box-shadow: none !important; border: 0 !important; border-radius: 0 !important; max-width: none !important; }
+  .avoid-break { break-inside: avoid; }
+}

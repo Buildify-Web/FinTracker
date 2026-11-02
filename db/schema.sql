@@ -253,3 +253,118 @@ CREATE TABLE IF NOT EXISTS debt_draws (
 ALTER TABLE debts ADD COLUMN IF NOT EXISTS tenure_months INT;
 ALTER TABLE debts ADD COLUMN IF NOT EXISTS monthly_payment NUMERIC(14,2);
 ALTER TABLE debts ADD COLUMN IF NOT EXISTS plan_start DATE;
+
+-- ---------- Invoice maker ----------
+-- Billing details live on the client (shown under "Bill to"); the project gets a short scope line.
+ALTER TABLE clients ADD COLUMN IF NOT EXISTS contact_name TEXT;
+ALTER TABLE clients ADD COLUMN IF NOT EXISTS contact_phone TEXT;
+ALTER TABLE clients ADD COLUMN IF NOT EXISTS billing_address TEXT;
+ALTER TABLE clients ADD COLUMN IF NOT EXISTS gstin TEXT;
+ALTER TABLE projects ADD COLUMN IF NOT EXISTS description TEXT;
+
+-- A generated invoice keeps its line items, the client details as they were when it was made,
+-- and a random token for the public share link. `amount` stays the balance still due, so cash
+-- and receivables keep working: amount = items total - discount - advance already received.
+ALTER TABLE invoices ADD COLUMN IF NOT EXISTS share_token TEXT UNIQUE;
+ALTER TABLE invoices ADD COLUMN IF NOT EXISTS items JSONB;
+ALTER TABLE invoices ADD COLUMN IF NOT EXISTS discount NUMERIC(14,2) NOT NULL DEFAULT 0;
+ALTER TABLE invoices ADD COLUMN IF NOT EXISTS advance_paid NUMERIC(14,2) NOT NULL DEFAULT 0;
+ALTER TABLE invoices ADD COLUMN IF NOT EXISTS advance_date DATE;
+ALTER TABLE invoices ADD COLUMN IF NOT EXISTS terms_label TEXT;
+ALTER TABLE invoices ADD COLUMN IF NOT EXISTS payment_terms TEXT;
+ALTER TABLE invoices ADD COLUMN IF NOT EXISTS terms TEXT;
+ALTER TABLE invoices ADD COLUMN IF NOT EXISTS bill_to JSONB;
+
+-- ---------- Part payments (invoices and bills) ----------
+-- An invoice can bill one slice of a project (a milestone): the project's total and a label are kept on it.
+ALTER TABLE invoices ADD COLUMN IF NOT EXISTS project_total NUMERIC(14,2);
+ALTER TABLE invoices ADD COLUMN IF NOT EXISTS part_label TEXT;
+
+-- A bill can be paid in parts. `paid_amount` is the running total of bill_payments (kept in step by the API).
+-- `items` is the payroll breakdown (one line per person) when a bill came from the Payroll page.
+ALTER TABLE bills ADD COLUMN IF NOT EXISTS items JSONB;
+ALTER TABLE bills ADD COLUMN IF NOT EXISTS paid_amount NUMERIC(14,2) NOT NULL DEFAULT 0;
+ALTER TABLE bills ADD COLUMN IF NOT EXISTS payroll_month TEXT;
+
+CREATE TABLE IF NOT EXISTS bill_payments (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  bill_id UUID NOT NULL REFERENCES bills(id) ON DELETE CASCADE,
+  transaction_id UUID REFERENCES transactions(id) ON DELETE CASCADE,
+  amount NUMERIC(14,2) NOT NULL CHECK (amount > 0),
+  paid_date DATE NOT NULL,
+  item_key TEXT,            -- the person (team_costs id) this payment was for, on a payroll bill
+  label TEXT,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS idx_bill_payments_bill ON bill_payments(bill_id);
+CREATE INDEX IF NOT EXISTS idx_bill_payments_tx ON bill_payments(transaction_id);
+
+-- Bills paid before part payments existed get one payment row for their single transaction.
+INSERT INTO bill_payments (bill_id, transaction_id, amount, paid_date)
+SELECT b.id, b.paid_transaction_id, t.amount, t.date
+FROM bills b JOIN transactions t ON t.id = b.paid_transaction_id
+WHERE NOT EXISTS (SELECT 1 FROM bill_payments p WHERE p.bill_id = b.id);
+UPDATE bills b SET paid_amount = s.total
+FROM (SELECT bill_id, SUM(amount) AS total FROM bill_payments GROUP BY bill_id) s
+WHERE s.bill_id = b.id AND b.paid_amount <> s.total;
+
+-- The payroll plan you last sent to Bills for a month (person id -> amount), so it can be sent back and edited.
+CREATE TABLE IF NOT EXISTS payroll_plans (
+  month TEXT PRIMARY KEY,
+  amounts JSONB NOT NULL,
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+-- ---------- Invoice emails & reminders ----------
+-- Reminders only go to invoices that were emailed from the app (emailed_at), every 2 days, until paid or paused.
+ALTER TABLE invoices ADD COLUMN IF NOT EXISTS reminders_paused BOOLEAN NOT NULL DEFAULT false;
+ALTER TABLE invoices ADD COLUMN IF NOT EXISTS emailed_at TIMESTAMPTZ;
+ALTER TABLE invoices ADD COLUMN IF NOT EXISTS last_reminder_on DATE;
+
+CREATE TABLE IF NOT EXISTS invoice_emails (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  invoice_id UUID NOT NULL REFERENCES invoices(id) ON DELETE CASCADE,
+  kind TEXT NOT NULL CHECK (kind IN ('invoice','reminder')),
+  to_email TEXT NOT NULL,
+  subject TEXT NOT NULL,
+  ok BOOLEAN NOT NULL,
+  error TEXT,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS idx_invoice_emails_invoice ON invoice_emails(invoice_id, created_at DESC);
+
+-- ---------- Bills for a client ----------
+-- A bill can belong to a client (and its project). Its payments carry the same link, so the cost shows on that client.
+ALTER TABLE bills ADD COLUMN IF NOT EXISTS client_id UUID REFERENCES clients(id) ON DELETE SET NULL;
+ALTER TABLE bills ADD COLUMN IF NOT EXISTS project_id UUID REFERENCES projects(id) ON DELETE SET NULL;
+CREATE INDEX IF NOT EXISTS idx_bills_client ON bills(client_id);
+
+-- ---------- Older clients: part of the project was paid before this app ----------
+-- Money already received outside the books (e.g. 70% of an older project). It is only used to work out what is left to
+-- invoice. It never creates cash, income or margin.
+ALTER TABLE projects ADD COLUMN IF NOT EXISTS prior_paid NUMERIC(14,2) NOT NULL DEFAULT 0;
+
+-- ---------- Transfers between your own accounts, and safer accounts ----------
+-- A transfer is one record plus two linked transactions (money out of one account, money in to another). The two legs move
+-- each account's balance but are left out of income, spending, margins and budgets.
+CREATE TABLE IF NOT EXISTS transfers (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  date DATE NOT NULL,
+  amount NUMERIC(14,2) NOT NULL CHECK (amount > 0),
+  from_account_id UUID NOT NULL REFERENCES accounts(id) ON DELETE RESTRICT,
+  to_account_id UUID NOT NULL REFERENCES accounts(id) ON DELETE RESTRICT,
+  note TEXT,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  CHECK (from_account_id <> to_account_id)
+);
+ALTER TABLE transactions ADD COLUMN IF NOT EXISTS transfer_id UUID REFERENCES transfers(id) ON DELETE SET NULL;
+CREATE INDEX IF NOT EXISTS idx_transactions_transfer ON transactions(transfer_id) WHERE transfer_id IS NOT NULL;
+
+-- An archived account keeps its history and balance but no longer shows up when you add things.
+ALTER TABLE accounts ADD COLUMN IF NOT EXISTS archived BOOLEAN NOT NULL DEFAULT false;
+-- Two accounts can't share a name (ignoring capitals). Skipped, not failed, if old data already has a clash.
+DO $$ BEGIN
+  CREATE UNIQUE INDEX IF NOT EXISTS uq_accounts_name ON accounts (lower(name));
+EXCEPTION WHEN unique_violation THEN
+  RAISE NOTICE 'accounts have duplicate names; unique index skipped';
+END $$;

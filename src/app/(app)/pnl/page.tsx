@@ -1,4 +1,5 @@
 import Link from 'next/link';
+import BudgetBars from '@/components/BudgetBars';
 import { getMonthlyPnl, getExpenseByCategory, getBudgetStatus } from '@/lib/queries';
 import { Card, Table } from '@/components/ui';
 import { fmtINR, fmtCompactINR } from '@/lib/format';
@@ -86,27 +87,7 @@ export default async function PnlPage() {
         {budgets.length === 0 ? (
           <div className="py-4 text-sm text-muted">No budgets yet. Give any spending category (payroll, R&amp;D, marketing…) a monthly budget in Settings to track it here.</div>
         ) : (
-          <div className="flex flex-col gap-4">
-            {budgets.map((b) => {
-              const color = b.pct >= 100 ? 'bg-neg' : b.pct >= 90 ? 'bg-warn' : 'bg-accent';
-              return (
-                <div key={b.id}>
-                  <div className="flex items-baseline justify-between gap-3 text-[13px]">
-                    <span className="font-semibold">{b.name}</span>
-                    <span className="font-mono text-muted">
-                      <span className={b.pct >= 100 ? 'text-neg font-semibold' : 'text-fg'}>{fmtCompactINR(b.spent)}</span> of {fmtCompactINR(b.budget)} ·{' '}
-                      {b.pct >= 100 ? `${fmtCompactINR(b.spent - b.budget)} over` : `${fmtCompactINR(b.budget - b.spent)} left`}
-                    </span>
-                  </div>
-                  <div className="relative h-2 bg-bg rounded-full overflow-hidden mt-1.5">
-                    <div className={`h-full ${color} rounded-full`} style={{ width: `${Math.min(100, b.pct)}%` }} />
-                    {/* marker: where spending would be if it were even through the month */}
-                    <div className="absolute top-0 h-full w-0.5 bg-fg/40" style={{ left: `${monthPct}%` }} />
-                  </div>
-                </div>
-              );
-            })}
-          </div>
+          <BudgetBars budgets={budgets} monthPct={monthPct} />
         )}
       </Card>
       <PnlCharts pnl={pnl} growing={growing} />

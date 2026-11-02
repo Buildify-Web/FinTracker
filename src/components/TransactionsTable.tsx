@@ -3,12 +3,13 @@
 import { useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
 import { useRouter, usePathname, useSearchParams } from 'next/navigation';
-import { ChevronLeft, ChevronRight, Trash2, X } from 'lucide-react';
+import { ArrowLeftRight, ChevronLeft, ChevronRight, Trash2, X } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { Table } from './ui';
 import { Button } from './ui/button';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from './ui/dialog';
 import EntryActions from './EntryActions';
+import TransferRowActions from './TransferRowActions';
 import { fmtINR, fmtDate } from '@/lib/format';
 import { PAGE_SIZES, type TxFilters } from '@/lib/txFilters';
 
@@ -63,7 +64,7 @@ export default function TransactionsTable({
   total: number;
   totals: { in: number; out: number };
   filters: TxFilters;
-  accounts: { id: string; name: string }[];
+  accounts: { id: string; name: string; balance?: number; archived?: boolean }[];
   categories: { id: string; name: string }[];
 }) {
   const router = useRouter();
@@ -191,6 +192,7 @@ export default function TransactionsTable({
         <select value={filters.category} onChange={(e) => go({ category: e.target.value })} aria-label="Category">
           <option value="">All categories</option>
           <option value="none">Uncategorised</option>
+          <option value="transfer">Transfers between accounts</option>
           {categories.map((c) => (
             <option key={c.id} value={c.id}>
               {c.name}
@@ -250,13 +252,26 @@ export default function TransactionsTable({
           box(picked.has(t.id), (e) => pick(i, e.shiftKey), 'Select transaction (shift-click for a range)'),
           fmtDate(t.date),
           t.account_name ?? '—',
-          t.category_name ?? t.note ?? <span key="u" className="text-muted">Uncategorised</span>,
+          t.transfer_id ? (
+            <span key="w" className="flex min-w-0 flex-col">
+              <span className="inline-flex items-center gap-1.5 font-medium">
+                <ArrowLeftRight size={13} className="flex-shrink-0 text-accent" />
+                <span className="truncate">
+                  {t.transfer_from ?? '—'} → {t.transfer_to ?? '—'}
+                </span>
+              </span>
+              <span className="truncate text-[11px] text-muted">Transfer between your accounts{t.note ? ` · ${t.note}` : ''}</span>
+            </span>
+          ) : (
+            t.category_name ?? t.note ?? <span key="u" className="text-muted">Uncategorised</span>
+          ),
           t.client_name ?? '—',
-          <span key="a" className={`font-mono ${t.direction === 'in' ? 'text-pos' : 'text-neg'}`}>
+          // A transfer is neither income nor spending, so it is not green or red.
+          <span key="a" className={`font-mono ${t.transfer_id ? 'text-accent' : t.direction === 'in' ? 'text-pos' : 'text-neg'}`}>
             {t.direction === 'in' ? '+' : '-'}
             {fmtINR(t.amount)}
           </span>,
-          <EntryActions key="e" kind="transaction" record={t} />
+          t.transfer_id ? <TransferRowActions key="e" row={t} accounts={accounts} /> : <EntryActions key="e" kind="transaction" record={t} />
         ])}
       />
       {total > 0 && (
@@ -303,7 +318,7 @@ export default function TransactionsTable({
           <DialogHeader>
             <DialogTitle>Delete {picked.size} transaction{picked.size === 1 ? '' : 's'}?</DialogTitle>
             <DialogDescription>
-              Balances update straight away. Any invoice or bill that was paid by one of these goes back to unpaid. This can't be undone.
+              Balances update straight away. Any invoice or bill that was paid by one of these goes back to unpaid. Deleting one side of a transfer between your accounts removes the other side too. This can't be undone.
             </DialogDescription>
           </DialogHeader>
           {error && <div className="text-neg text-sm">{error}</div>}

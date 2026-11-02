@@ -1,5 +1,6 @@
 import { getCategories, getTeam, getProjects } from '@/lib/queries';
 import { query } from '@/lib/db';
+import { getInvoiceProfile } from '@/lib/invoice';
 import SettingsClient from './SettingsClient';
 
 export const dynamic = 'force-dynamic';
@@ -7,14 +8,15 @@ export const dynamic = 'force-dynamic';
 // One place for everything you set up once: categories & budgets, team & planned hires,
 // auto-tag rules for imports, and when alerts fire.
 export default async function SettingsPage() {
-  const [categories, team, projects, rules, settingsRows] = await Promise.all([
+  const [categories, team, projects, rules, settingsRows, invoiceProfile] = await Promise.all([
     getCategories(),
     getTeam(),
     getProjects(),
     query<{ id: string; match_text: string; category_name: string | null }>(
       `SELECT r.id, r.match_text, c.name AS category_name FROM categorization_rules r LEFT JOIN categories c ON c.id = r.category_id ORDER BY r.created_at DESC`
     ),
-    query<{ key: string; value: any }>('SELECT key, value FROM settings')
+    query<{ key: string; value: any }>('SELECT key, value FROM settings'),
+    getInvoiceProfile()
   ]);
   const settings: Record<string, any> = {};
   for (const r of settingsRows) settings[r.key] = r.value;
@@ -27,6 +29,7 @@ export default async function SettingsPage() {
       rules={rules}
       cashFloorMonths={Number(settings.cash_floor_months ?? 2)}
       thresholds={settings.thresholds ?? {}}
+      invoiceProfile={invoiceProfile}
     />
   );
 }

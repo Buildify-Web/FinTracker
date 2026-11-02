@@ -1,5 +1,5 @@
 import Link from 'next/link';
-import { getAccounts, getAccountBalancesByMonth, getMonthlyPnl, getTotalCash } from '@/lib/queries';
+import { getAccountsWithBalances, getAccountBalancesByMonth, getMonthlyPnl, getTotalCash } from '@/lib/queries';
 import { query } from '@/lib/db';
 import { parseTxFilters, txWhere, TX_FROM } from '@/lib/txFilters';
 import { getCategories } from '@/lib/queries';
@@ -9,6 +9,7 @@ import StatementImporter from '@/components/StatementImporter';
 import TransactionsTable from '@/components/TransactionsTable';
 import CashCharts from './CashCharts';
 import AccountForm from './AccountForm';
+import AccountsManager from './AccountsManager';
 
 export const dynamic = 'force-dynamic';
 
@@ -25,6 +26,12 @@ type TxRow = {
   account_name: string | null;
   category_name: string | null;
   client_name: string | null;
+  transfer_id: string | null;
+  transfer_amount: string | null;
+  transfer_from: string | null;
+  transfer_to: string | null;
+  transfer_from_id: string | null;
+  transfer_to_id: string | null;
 };
 
 type StatementRow = {
@@ -44,18 +51,20 @@ export default async function CashPage({ searchParams }: { searchParams: Promise
   const where = txWhere(filters);
   const lastMonthEnd = new Date(new Date().getFullYear(), new Date().getMonth(), 0).toISOString().slice(0, 10);
   const [accounts, { series }, pnl, openingThisMonth, closing, transactions, totalRows, categories, statements] = await Promise.all([
-    getAccounts(),
+    getAccountsWithBalances(),
     getAccountBalancesByMonth(6),
     getMonthlyPnl(1),
     getTotalCash(lastMonthEnd),
     getTotalCash(),
     query<TxRow>(
-      `SELECT t.*, a.name AS account_name, c.name AS category_name, cl.name AS client_name ${TX_FROM} ${where.sql}
+      `SELECT t.*, a.name AS account_name, c.name AS category_name, cl.name AS client_name,
+         tr.amount AS transfer_amount, tr.from_account_id AS transfer_from_id, tr.to_account_id AS transfer_to_id, fa.name AS transfer_from, ta.name AS transfer_to
+       ${TX_FROM} LEFT JOIN accounts fa ON fa.id = tr.from_account_id LEFT JOIN accounts ta ON ta.id = tr.to_account_id ${where.sql}
        ORDER BY t.date DESC, t.created_at DESC LIMIT ${filters.size} OFFSET ${(filters.page - 1) * filters.size}`,
       where.params
     ),
     query<{ n: string; money_in: string; money_out: string }>(
-      `SELECT COUNT(*) AS n, COALESCE(SUM(t.amount) FILTER (WHERE t.direction = 'in'), 0) AS money_in, COALESCE(SUM(t.amount) FILTER (WHERE t.direction = 'out'), 0) AS money_out ${TX_FROM} ${where.sql}`,
+      `SELECT COUNT(*) AS n, COALESCE(SUM(t.amount) FILTER (WHERE t.direction = 'in' AND t.transfer_id IS NULL), 0) AS money_in, COALESCE(SUM(t.amount) FILTER (WHERE t.direction = 'out' AND t.transfer_id IS NULL), 0) AS money_out ${TX_FROM} ${where.sql}`,
       where.params
     ),
     getCategories(),
@@ -70,7 +79,7 @@ export default async function CashPage({ searchParams }: { searchParams: Promise
   const curr = pnl[pnl.length - 1];
   const toReview = Number((await query<{ n: string }>("SELECT COUNT(*) AS n FROM transactions WHERE reviewed = false AND source IN ('csv','slice')"))[0]?.n ?? 0);
 
-  if (accounts.length === 0) {
+  if (accounts.filter((a) => !a.archived).length === 0 && accounts.length === 0) {
     return (
       <Card title="Add your first account" sub="Start with today's balance — everything else builds on it">
         <AccountForm inline />
@@ -88,8 +97,21 @@ export default async function CashPage({ searchParams }: { searchParams: Promise
           <span className="font-semibold text-accent flex-shrink-0">Categorize →</span>
         </Link>
       )}
-      <Card title="Accounts" sub={`${fmtINR(closing)} across ${accounts.length} account${accounts.length === 1 ? '' : 's'}`} action={<AccountForm />}>
-        <Table head={['Account', 'Type', 'Started with']} rows={accounts.map((a) => [a.name, a.type, fmtINR(a.opening_balance)])} />
+      <Card title="Accounts" sub="Balances, transfers between accounts, and tidying up">
+        <AccountsManager
+          total={closing}
+          accounts={accounts.map((a) => ({
+            id: a.id,
+            name: a.name,
+            type: a.type,
+            archived: a.archived,
+            opening_balance: Number(a.opening_balance),
+            balance: Number(a.balance),
+            tx_count: Number(a.tx_count),
+            last_tx: a.last_tx,
+            transfer_count: Number(a.transfer_count)
+          }))}
+        />
       </Card>
 
       <Card title="Transactions" sub={`${Number(totalRows[0].n)} ${Number(totalRows[0].n) === 1 ? 'entry' : 'entries'}`}>
@@ -98,13 +120,13 @@ export default async function CashPage({ searchParams }: { searchParams: Promise
           total={Number(totalRows[0].n)}
           totals={{ in: Number(totalRows[0].money_in), out: Number(totalRows[0].money_out) }}
           filters={filters}
-          accounts={accounts.map((a) => ({ id: a.id, name: a.name }))}
+          accounts={accounts.map((a) => ({ id: a.id, name: a.name.trim(), balance: Number(a.balance), archived: a.archived }))}
           categories={categories.map((c) => ({ id: c.id, name: c.name }))}
         />
       </Card>
 
       <CashCharts
-        accounts={accounts.map((a) => ({ id: a.id, name: a.name }))}
+        accounts={accounts.filter((a) => !a.archived || series.some((m) => Math.abs(m.balances[a.id] ?? 0) > 0.004)).map((a) => ({ id: a.id, name: a.name.trim() }))}
         series={series}
         waterfall={{ opening: openingThisMonth, inflow: curr.revenue, outflow: curr.direct + curr.expense, closing }}
       />

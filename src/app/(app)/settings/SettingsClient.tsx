@@ -14,6 +14,7 @@ import { cn } from '@/lib/utils';
 import { FONTS } from '@/lib/fonts';
 import { setFont, useFont } from '@/lib/theme';
 import type { Category, TeamMember } from '@/lib/queries';
+import type { InvoiceProfile } from '@/lib/invoiceTypes';
 
 const TYPE_LABEL: Record<string, string> = { income: 'Income', direct: 'Delivery cost', expense: 'Running cost' };
 
@@ -24,6 +25,7 @@ type Props = {
   rules: { id: string; match_text: string; category_name: string | null }[];
   cashFloorMonths: number;
   thresholds: Record<string, number>;
+  invoiceProfile: InvoiceProfile;
 };
 
 async function send(url: string, method: string, body?: unknown) {
@@ -37,6 +39,7 @@ export default function SettingsClient(props: Props) {
     <>
       <AppearanceSection />
       <CategoriesSection categories={props.categories} />
+      <InvoiceDetailsSection profile={props.invoiceProfile} />
       <TeamSection team={props.team} categories={props.categories} projects={props.projects} />
       <RulesSection rules={props.rules} categories={props.categories} />
       <AlertsSection cashFloorMonths={props.cashFloorMonths} thresholds={props.thresholds} />
@@ -195,6 +198,69 @@ function CategoriesSection({ categories }: { categories: Category[] }) {
           </Button>
         ])}
       />
+    </Disclosure>
+  );
+}
+
+// ---------- Invoice details ----------
+
+const PROFILE_FIELDS: { key: keyof InvoiceProfile; label: string; multiline?: boolean; span2?: boolean; placeholder?: string }[] = [
+  { key: 'business_name', label: 'Business name' },
+  { key: 'gstin', label: 'GSTIN (optional)' },
+  { key: 'email', label: 'Email' },
+  { key: 'phone', label: 'Phone' },
+  { key: 'address', label: 'Address', multiline: true, span2: true },
+  { key: 'account_name', label: 'Bank account name' },
+  { key: 'bank_name', label: 'Bank' },
+  { key: 'account_number', label: 'Account number' },
+  { key: 'ifsc', label: 'IFSC' },
+  { key: 'upi_id', label: 'UPI ID', placeholder: 'name@bank' },
+  { key: 'default_terms_label', label: 'Default payment terms (short)', placeholder: 'e.g. Due on receipt', span2: true },
+  { key: 'default_payment_terms', label: 'Default payment terms (details)', multiline: true, span2: true },
+  { key: 'default_terms', label: 'Default terms', multiline: true, span2: true }
+];
+
+// Who the invoice is from and where to pay. Printed on every invoice and on the client's share link.
+function InvoiceDetailsSection({ profile }: { profile: InvoiceProfile }) {
+  const router = useRouter();
+  const [form, setForm] = useState(profile);
+  const [state, setState] = useState<'idle' | 'saving' | 'saved'>('idle');
+  const [error, setError] = useState<string | null>(null);
+
+  async function save() {
+    setState('saving');
+    setError(null);
+    try {
+      await send('/api/settings', 'POST', { invoice_profile: form });
+      setState('saved');
+      router.refresh();
+    } catch (e) {
+      setError((e as Error).message);
+      setState('idle');
+    }
+  }
+
+  return (
+    <Disclosure title="Invoice details" summary={form.upi_id || form.account_number ? `${form.business_name} · payment details set` : 'Add your bank / UPI so clients can pay from the invoice link'}>
+      <p className="text-[13px] text-muted mb-3">Printed on every invoice you make, and shown on the link you share with a client. Defaults for terms are copied into each new invoice, where you can change them.</p>
+      <div className="grid grid-cols-2 gap-3">
+        {PROFILE_FIELDS.map((f) => (
+          <Field key={f.key} label={f.label} span2={f.span2}>
+            {f.multiline ? (
+              <textarea value={form[f.key]} onChange={(e) => setForm({ ...form, [f.key]: e.target.value })} rows={3} placeholder={f.placeholder} className="input h-auto py-2" />
+            ) : (
+              <input value={form[f.key]} onChange={(e) => setForm({ ...form, [f.key]: e.target.value })} placeholder={f.placeholder} className="input" />
+            )}
+          </Field>
+        ))}
+      </div>
+      {error && <div className="mt-3 text-neg text-sm">{error}</div>}
+      <div className="mt-4 flex items-center justify-end gap-3">
+        {state === 'saved' && <span className="text-[12px] text-pos">Saved</span>}
+        <Button onClick={save} disabled={state === 'saving'}>
+          {state === 'saving' ? 'Saving…' : 'Save invoice details'}
+        </Button>
+      </div>
     </Disclosure>
   );
 }

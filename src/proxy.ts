@@ -2,11 +2,12 @@ import { NextResponse, type NextRequest } from 'next/server';
 import { jwtVerify } from 'jose';
 
 const COOKIE_NAME = 'fintracker_session';
-const PUBLIC_PATHS = ['/login', '/api/auth/login', '/api/health', '/api/auth/otp/request', '/api/auth/otp/verify'];
+const PUBLIC_PATHS = ['/login', '/api/auth/login', '/api/health', '/api/auth/otp/request', '/api/auth/otp/verify', '/api/cron/reminders'];
 
 export async function proxy(req: NextRequest) {
   const { pathname } = req.nextUrl;
-  if (PUBLIC_PATHS.some((p) => pathname === p) || pathname.startsWith('/_next') || pathname.startsWith('/favicon')) {
+  // /i/<token> is the shareable invoice page: anyone with the link can open it. The logo files are served on it too.
+  if (PUBLIC_PATHS.some((p) => pathname === p) || pathname.startsWith('/_next') || pathname.startsWith('/favicon') || pathname.startsWith('/i/') || /^\/(logo[\w-]*|icon)\.png$/.test(pathname)) {
     return NextResponse.next();
   }
 
